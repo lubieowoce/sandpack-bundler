@@ -1,4 +1,5 @@
 import { BundlerError } from '../../errors/BundlerError';
+import { debug } from '../../utils/logger';
 import { Bundler } from '../bundler';
 import { Evaluation } from './Evaluation';
 import { HotContext } from './hot';
@@ -32,6 +33,7 @@ export class Module {
     this.dependencyMap = new Map();
     this.bundler = bundler;
     this.hot = new HotContext(this);
+    this.evaluation = null;
   }
 
   get initiators() {
@@ -128,8 +130,10 @@ export class Module {
 
   evaluate(): Evaluation {
     if (this.evaluation) {
+      debug(`Module.evaluate() :: already evaluat${[0, 1].includes(this.evaluation.status) ? 'ing' : 'ed'}`, this.id);
       return this.evaluation;
     }
+    debug('%cModule.evaluate() :: starting new evaluation', 'color: tomato', this.id);
 
     if (this.hot.hmrConfig) {
       // this.bundler.setHmrStatus('dispose');
@@ -142,6 +146,9 @@ export class Module {
     // Reset hmr context while keeping the previous hot data
     this.hot = this.hot.clone();
     this.evaluation = new Evaluation(this);
+    // NOTE: ensure that this is assigned to `this.evaluation` before running,
+    // otherwise circular imports triggered by `.run()` won't see it, and will try to evaluate again
+    this.evaluation.getExports();
 
     // this.bundler.setHmrStatus('apply');
     if (this.hot.hmrConfig && this.hot.hmrConfig.isHot()) {

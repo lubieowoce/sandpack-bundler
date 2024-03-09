@@ -14,6 +14,8 @@ import * as logger from './utils/logger';
 
 const bundlerStartTime = Date.now();
 
+const DEBUGGER_ON_ERROR = false;
+
 class SandpackInstance {
   private messageBus: IFrameParentMessageBus;
   private disposableStore = new DisposableStore();
@@ -183,7 +185,7 @@ class SandpackInstance {
       })
       .catch((error: CompilationError) => {
         logger.error(error);
-
+        if (DEBUGGER_ON_ERROR) debugger;
         this.messageBus.sendMessage('action', errorMessage(error));
 
         this.messageBus.sendMessage('done', {
@@ -203,7 +205,7 @@ class SandpackInstance {
       this.messageBus.sendMessage('status', { status: 'evaluating' });
 
       try {
-        logger.groupCollapsed(logger.logFactory('Evaluation'));
+        logger.group(logger.logFactory('Evaluation'));
         const evalStartTime = Date.now();
 
         evaluate();
@@ -214,7 +216,7 @@ class SandpackInstance {
         logger.groupEnd();
       } catch (error: unknown) {
         logger.error(error);
-
+        if (DEBUGGER_ON_ERROR) debugger;
         this.messageBus.sendMessage(
           'action',
           errorMessage(error as BundlerError) // TODO: create a evaluation error

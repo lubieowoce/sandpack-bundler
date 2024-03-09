@@ -15,7 +15,8 @@ export class NamedPromiseQueue<T> {
   addEntry(id: string, run: () => Promise<T>): Promise<T> {
     let foundPromise = this.promises.get(id);
     if (!foundPromise) {
-      foundPromise = this.queue.add<T>(run).finally(() => {
+      foundPromise = this.queue.add<T>(run);
+      foundPromise.finally(() => {
         this.promises.delete(id);
       });
     }

@@ -30,7 +30,9 @@ async function getPresets(presets: any): Promise<PluginItem[]> {
       'env',
       {
         targets: '> 2.5%, not ie 11, not dead, not op_mini all',
+        // https://github.com/rollup/rollup-plugin-babel/issues/254, and we can't exlude core-js because it breaks collectDependencies
         useBuiltIns: 'usage',
+        // useBuiltIns: false,
         corejs: '3.22',
         exclude: ['@babel/plugin-transform-regenerator'],
       },

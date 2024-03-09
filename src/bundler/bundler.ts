@@ -176,7 +176,9 @@ export class Bundler {
 
       // Load all modules
       await this.moduleRegistry.preloadModules();
-      await this.moduleRegistry.loadModuleDependencies();
+      // weird things happen with `useBuiltins: "usage" if 'core-js' isn't loaded here,
+      // but we don't want to eagerly load anything else
+      await this.moduleRegistry.loadModuleDependencies(['core-js']);
     }
   }
 
@@ -213,6 +215,7 @@ export class Bundler {
         module.source = await this.fs.readFileAsync(path);
       }
     } else {
+      logger.debug('Module._transformModule :: creating fresh module', path);
       const content = await this.fs.readFileAsync(path);
       module = new Module(path, content, false, this);
       this.modules.set(path, module);
@@ -230,6 +233,11 @@ export class Bundler {
     let module = this.modules.get(path);
     if (module && module.compiled != null) {
       return Promise.resolve(module);
+    }
+    logger.debug('Bundler :: transformModule', path);
+    const existingItem = this.transformationQueue.getItem(path);
+    if (existingItem) {
+      return existingItem;
     }
     return this.transformationQueue.addEntry(path, () => {
       return this._transformModule(path);

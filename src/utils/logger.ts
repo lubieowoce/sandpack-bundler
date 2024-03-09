@@ -10,7 +10,7 @@ const steps = [
   'Finished',
 ] as const;
 
-export const logFactory = (step: typeof steps[number], details = '') => {
+export const logFactory = (step: (typeof steps)[number], details = '') => {
   const currentStep = steps.findIndex((name) => name === step) + 1;
   const total = steps.length;
 
@@ -50,6 +50,12 @@ export function warn(...data: any[]) {
 export function error(...data: any[]) {
   if (shouldLog(SandpackLogLevel.Error)) {
     console.error(...data);
+  }
+}
+
+export function group(...data: any[]) {
+  if (shouldLog(SandpackLogLevel.Debug)) {
+    console.group(...data);
   }
 }
 

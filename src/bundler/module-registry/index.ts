@@ -84,9 +84,14 @@ export class ModuleRegistry {
     });
   }
 
-  async loadModuleDependencies() {
+  async loadModuleDependencies(only?: string[]) {
     const depPromises = [];
-    for (let [moduleName, nodeModule] of this.modules) {
+    const modulesToLoad = only
+      ? only
+          .filter((moduleName) => this.modules.has(moduleName))
+          .map((moduleName) => [moduleName, this.modules.get(moduleName)!] as const)
+      : this.modules.entries();
+    for (let [moduleName, nodeModule] of modulesToLoad) {
       for (let [fileName, file] of Object.entries(nodeModule.files)) {
         if (typeof file === 'object') {
           const promises = this._writePrecompiledModule(`/node_modules/${moduleName}/${fileName}`, file);

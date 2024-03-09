@@ -271,6 +271,11 @@ export const resolver = gensync<(moduleSpecifier: string, inputOpts: IResolveOpt
   moduleSpecifier,
   inputOpts
 ): Generator<any, string, any> {
+  if (moduleSpecifier === undefined) {
+    throw new Error(
+      'Internal error: resolver received an `undefined` for the specifier. This is might be an issue with `collectDependencies`.'
+    );
+  }
   const normalizedSpecifier = normalizeModuleSpecifier(moduleSpecifier);
   const opts = normalizeResolverOptions(inputOpts);
   const modulePath = yield* resolveModule(normalizedSpecifier, opts);
