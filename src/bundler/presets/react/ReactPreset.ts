@@ -7,15 +7,23 @@ import { ReactRefreshTransformer } from '../../transforms/react-refresh';
 import { StyleTransformer } from '../../transforms/style';
 import { Preset } from '../Preset';
 
+type ReactPresetOpts = { type: 'server' | 'client' };
+const DEFAULT_OPTS: ReactPresetOpts = { type: 'client' };
+
 export class ReactPreset extends Preset {
   defaultHtmlBody = '<div id="root"></div>';
+  opts: ReactPresetOpts;
 
-  constructor() {
-    super('react');
+  constructor(opts: ReactPresetOpts = DEFAULT_OPTS) {
+    super(opts.type === 'server' ? 'react-server' : 'react');
+    this.opts = opts;
   }
 
   async init(bundler: Bundler): Promise<void> {
     await super.init(bundler);
+    if (this.opts.type === 'server') {
+      bundler.setResolveOptions({ conditionNames: ['react-server', '...'] });
+    }
 
     await Promise.all([
       this.registerTransformer(new BabelTransformer()),

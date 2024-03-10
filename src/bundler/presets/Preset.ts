@@ -1,3 +1,4 @@
+import * as logger from '../../utils/logger';
 import { Bundler } from '../bundler';
 import { DepMap } from '../module-registry';
 import { Module } from '../module/Module';
@@ -26,6 +27,7 @@ export class Preset {
   }
 
   async init(bundler: Bundler): Promise<void> {
+    logger.debug('Initializing preset', this.name);
     this.bundler = bundler;
   }
 

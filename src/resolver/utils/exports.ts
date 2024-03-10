@@ -1,7 +1,7 @@
 import { normalizeAliasFilePath } from './alias';
 
 // exports keys, sorted from high to low priority
-const EXPORTS_KEYS = ['browser', 'development', 'default', 'require', 'import'];
+export const CONDITION_NAMES_DEFAULT = ['browser', 'development', 'default', 'require', 'import'];
 
 type PackageExportType = string | null | false | PackageExportObj | PackageExportArr;
 
@@ -15,7 +15,11 @@ export function normalizePackageExport(filepath: string, pkgRoot: string): strin
   return normalizeAliasFilePath(filepath.replace(/\*/g, '$1'), pkgRoot);
 }
 
-export function extractPathFromExport(exportValue: PackageExportType, pkgRoot: string): string | false {
+export function extractPathFromExport(
+  exportValue: PackageExportType,
+  pkgRoot: string,
+  conditionNames: string[]
+): string | false {
   if (!exportValue) {
     return false;
   }
@@ -25,7 +29,7 @@ export function extractPathFromExport(exportValue: PackageExportType, pkgRoot: s
   }
 
   if (Array.isArray(exportValue)) {
-    const foundPaths = exportValue.map((v) => extractPathFromExport(v, pkgRoot)).filter(Boolean);
+    const foundPaths = exportValue.map((v) => extractPathFromExport(v, pkgRoot, conditionNames)).filter(Boolean);
     if (!foundPaths.length) {
       return false;
     }
@@ -33,13 +37,13 @@ export function extractPathFromExport(exportValue: PackageExportType, pkgRoot: s
   }
 
   if (typeof exportValue === 'object') {
-    for (const key of EXPORTS_KEYS) {
+    for (const key of conditionNames) {
       const exportFilename = exportValue[key];
       if (exportFilename !== undefined) {
         if (typeof exportFilename === 'string') {
           return normalizePackageExport(exportFilename, pkgRoot);
         }
-        return extractPathFromExport(exportFilename, pkgRoot);
+        return extractPathFromExport(exportFilename, pkgRoot, conditionNames);
       }
     }
     return false;

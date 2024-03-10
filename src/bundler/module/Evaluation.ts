@@ -71,7 +71,7 @@ export class Evaluation {
 
   require(specifier: string): any {
     try {
-      logger.group(`Evaluation :: require(${JSON.stringify(specifier)})`, { importer: this.module.id });
+      logger.groupCollapsed(`Evaluation :: require(${JSON.stringify(specifier)})`, { importer: this.module.id });
       const moduleFilePath = this.module.dependencyMap.get(specifier);
       if (!moduleFilePath) {
         // statically analyzable modules would have been resolved

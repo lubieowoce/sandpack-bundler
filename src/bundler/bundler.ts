@@ -5,7 +5,7 @@ import { MemoryFSLayer } from '../FileSystem/layers/MemoryFSLayer';
 import { NodeModuleFSLayer } from '../FileSystem/layers/NodeModuleFSLayer';
 import { IFrameParentMessageBus } from '../protocol/iframe';
 import { BundlerStatus } from '../protocol/message-types';
-import { ResolverCache, resolveAsync } from '../resolver/resolver';
+import { IResolveOptionsInput, ResolverCache, resolveAsync } from '../resolver/resolver';
 import { IPackageJSON, ISandboxFile } from '../types';
 import { Emitter } from '../utils/emitter';
 import { replaceHTML } from '../utils/html';
@@ -27,6 +27,8 @@ interface IFSOptions {
   hasAsyncFileResolver?: boolean;
 }
 
+type BaseResolveOptions = Partial<Pick<IResolveOptionsInput, 'conditionNames' | 'extensions'>>;
+
 export class Bundler {
   private lastHTML: string | null = null;
   private messageBus: IFrameParentMessageBus;
@@ -42,6 +44,7 @@ export class Bundler {
   hasHMR = false;
   isFirstLoad = true;
   preset: Preset | undefined;
+  baseResolveOptions: BaseResolveOptions | undefined;
 
   // Map from module id => parent module ids
   initiators = new Map<string, Set<string>>();
@@ -74,6 +77,10 @@ export class Bundler {
     if (opts.hasAsyncFileResolver) {
       this.iFrameFsLayer.enableIFrameFS();
     }
+  }
+
+  setResolveOptions(resolveOptions: BaseResolveOptions | undefined) {
+    this.baseResolveOptions = { ...this.baseResolveOptions, ...resolveOptions };
   }
 
   async initPreset(preset: string): Promise<void> {
@@ -182,15 +189,14 @@ export class Bundler {
     }
   }
 
-  async resolveAsync(
-    specifier: string,
-    filename: string,
-    extensions: string[] = ['.js', '.jsx', '.mjs', '.cjs', '.ts', '.tsx']
-  ): Promise<string> {
+  RESOLVE_EXTENSIONS_DEFAULT = ['.js', '.jsx', '.mjs', '.cjs', '.ts', '.tsx'];
+
+  async resolveAsync(specifier: string, filename: string, extensions?: string[]): Promise<string> {
     try {
       const resolved = await resolveAsync(specifier, {
         filename,
-        extensions,
+        extensions: extensions ?? this.baseResolveOptions?.extensions ?? this.RESOLVE_EXTENSIONS_DEFAULT,
+        conditionNames: this.baseResolveOptions?.conditionNames,
         isFile: this.fs.isFile,
         readFile: this.fs.readFile,
         resolverCache: this.resolverCache,

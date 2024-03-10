@@ -93,6 +93,7 @@ class SandpackInstance {
   initResizeEvent() {
     const resizePolling = () => {
       if (this.resizePollingTimer) {
+        // @ts-expect-error confusion of interval types
         clearInterval(this.resizePollingTimer);
       }
 
@@ -205,7 +206,7 @@ class SandpackInstance {
       this.messageBus.sendMessage('status', { status: 'evaluating' });
 
       try {
-        logger.group(logger.logFactory('Evaluation'));
+        logger.groupCollapsed(logger.logFactory('Evaluation'));
         const evalStartTime = Date.now();
 
         evaluate();

@@ -2,7 +2,9 @@ import gensync from 'gensync';
 import micromatch from 'micromatch';
 
 import { ModuleNotFoundError } from '../errors/ModuleNotFound';
+// import * as logger from '../utils/logger';
 import * as pathUtils from '../utils/path';
+import { CONDITION_NAMES_DEFAULT } from './utils/exports';
 import { FnIsFile, FnReadFile, getParentDirectories, isFile } from './utils/fs';
 import { extractModuleSpecifierParts } from './utils/module-specifier';
 import { ProcessedPackageJSON, processPackageJSON } from './utils/pkg-json';
@@ -13,6 +15,7 @@ export type ResolverCache = Map<string, any>;
 export interface IResolveOptionsInput {
   filename: string;
   extensions: string[];
+  conditionNames?: string[];
   isFile: FnIsFile;
   readFile: FnReadFile;
   moduleDirectories?: string[];
@@ -22,6 +25,7 @@ export interface IResolveOptionsInput {
 interface IResolveOptions extends IResolveOptionsInput {
   moduleDirectories: string[];
   resolverCache: ResolverCache;
+  conditionNames: string[];
 }
 
 function normalizeResolverOptions(opts: IResolveOptionsInput): IResolveOptions {
@@ -33,11 +37,23 @@ function normalizeResolverOptions(opts: IResolveOptionsInput): IResolveOptions {
   return {
     filename: opts.filename,
     extensions: [...new Set(['', ...opts.extensions])],
+    conditionNames: opts.conditionNames
+      ? replaceEllipsisInConditionNames([...opts.conditionNames])
+      : CONDITION_NAMES_DEFAULT,
     isFile: opts.isFile,
     readFile: opts.readFile,
     moduleDirectories: [...normalizedModuleDirectories],
     resolverCache: opts.resolverCache || new Map(),
   };
+}
+
+function replaceEllipsisInConditionNames(conditionNames: string[]) {
+  const i = conditionNames.indexOf('...');
+  if (i === -1) {
+    return conditionNames;
+  }
+
+  return [...conditionNames.slice(0, i), ...CONDITION_NAMES_DEFAULT, ...conditionNames.slice(i + 1)];
 }
 
 interface IFoundPackageJSON {
@@ -58,7 +74,8 @@ function* loadPackageJSON(
       try {
         packageContent = processPackageJSON(
           JSON.parse(yield* opts.readFile(packageFilePath)),
-          pathUtils.dirname(packageFilePath)
+          pathUtils.dirname(packageFilePath),
+          opts.conditionNames
         );
         opts.resolverCache.set(packageFilePath, packageContent);
       } catch (err) {
@@ -87,7 +104,7 @@ function resolveFile(filepath: string, dir: string): string {
   }
 }
 
-function resolveAlias(pkgJson: IFoundPackageJSON, filename: string): string {
+function resolveAlias(pkgJson: IFoundPackageJSON, filename: string, opts: IResolveOptions): string {
   const aliases = pkgJson.content.aliases;
 
   let relativeFilepath = filename;
@@ -139,7 +156,7 @@ function* resolveModule(moduleSpecifier: string, opts: IResolveOptions): Generat
   const filename = resolveFile(moduleSpecifier, dirPath);
   const isAbsoluteFilename = filename[0] === '/';
   const pkgJson = yield* findPackageJSON(isAbsoluteFilename ? filename : opts.filename, opts);
-  return resolveAlias(pkgJson, filename);
+  return resolveAlias(pkgJson, filename, opts);
 }
 
 function* resolveNodeModule(moduleSpecifier: string, opts: IResolveOptions): Generator<any, string, any> {
@@ -214,7 +231,7 @@ function* expandFile(
 
   for (const ext of opts.extensions) {
     const f = filepath + ext;
-    const aliasedPath = resolveAlias(pkg, f);
+    const aliasedPath = resolveAlias(pkg, f, opts);
     if (aliasedPath === f) {
       const exists = yield* isFile(f, opts.isFile);
       if (exists) {
