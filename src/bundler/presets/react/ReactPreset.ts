@@ -13,15 +13,17 @@ const DEFAULT_OPTS: ReactPresetOpts = { type: 'client' };
 export class ReactPreset extends Preset {
   defaultHtmlBody = '<div id="root"></div>';
   opts: ReactPresetOpts;
+  isServer: boolean;
 
   constructor(opts: ReactPresetOpts = DEFAULT_OPTS) {
     super(opts.type === 'server' ? 'react-server' : 'react');
     this.opts = opts;
+    this.isServer = opts.type === 'server';
   }
 
   async init(bundler: Bundler): Promise<void> {
     await super.init(bundler);
-    if (this.opts.type === 'server') {
+    if (this.isServer) {
       bundler.setResolveOptions({ conditionNames: ['react-server', '...'] });
     }
 
@@ -35,6 +37,7 @@ export class ReactPreset extends Preset {
 
   mapTransformers(module: Module): Array<[string, any]> {
     if (/^(?!\/node_modules\/).*\.(((m|c)?jsx?)|tsx)$/.test(module.filepath)) {
+      type ConfigEntry = [string, any];
       return [
         [
           'babel-transformer',
@@ -47,10 +50,10 @@ export class ReactPreset extends Preset {
                 },
               ],
             ],
-            plugins: [['react-refresh/babel', { skipEnvCheck: true }]],
+            plugins: this.isServer ? undefined : [['react-refresh/babel', { skipEnvCheck: true }] as ConfigEntry],
           },
         ],
-        ['react-refresh-transformer', {}],
+        ...(this.isServer ? [] : [['react-refresh-transformer', {}] as ConfigEntry]),
       ];
     }
 
