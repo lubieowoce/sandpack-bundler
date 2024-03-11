@@ -183,9 +183,13 @@ export class Bundler {
 
       // Load all modules
       await this.moduleRegistry.preloadModules();
+
       // weird things happen with `useBuiltins: "usage" if 'core-js' isn't loaded here,
       // but we don't want to eagerly load anything else
+      // or do we?
+      // TODO: make up our minds here!
       await this.moduleRegistry.loadModuleDependencies(['core-js']);
+      // await this.moduleRegistry.loadModuleDependencies();
     }
   }
 
