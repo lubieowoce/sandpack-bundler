@@ -1,5 +1,7 @@
 import type { PluginItem } from '@babel/core';
 import * as babel from '@babel/standalone';
+import browserslist from 'browserslist'; // NOTE: be careful, @babel/standalone bundles its own copy...
+import { UAParser } from 'ua-parser-js';
 
 import * as logger from '../../../utils/logger';
 import { WorkerMessageBus } from '../../../utils/WorkerMessageBus';
@@ -23,13 +25,42 @@ function getNameFromConfigEntry(entry: any): string | null {
   }
 }
 
+let cachedDynamicTarget: undefined | string | string[] | null;
+function getDynamicTarget() {
+  if (cachedDynamicTarget === undefined) {
+    cachedDynamicTarget = getDynamicTargetImpl();
+  }
+  return cachedDynamicTarget;
+}
+
+function getDynamicTargetImpl() {
+  try {
+    const parsed = UAParser(navigator.userAgent);
+    if (parsed.browser.name && parsed.browser.version) {
+      const parsedMajor = parsed.browser.version;
+      // const parsedMajor = parsed.browser.version.replace(/\..+/, '');
+      const browserName = parsed.browser.name.toLowerCase();
+      const target = `${browserName} >= ${parsedMajor} or last 2 ${browserName} versions`;
+      const bl = browserslist(target); // try parsing it to see if browserlist considers it valid
+      if (bl.length === 0) {
+        return null;
+      }
+      logger.debug('Created dynamic browserlist target', target, bl);
+      return bl;
+    }
+  } catch (error) {
+    logger.error('Unable to create navigator-specific browserlist targets');
+  }
+  return null;
+}
+
 // TODO: Normalize preset names
 async function getPresets(presets: any): Promise<PluginItem[]> {
   const result: PluginItem[] = [
     [
       'env',
       {
-        targets: '> 2.5%, not ie 11, not dead, not op_mini all',
+        // targets: /* defined globally */,
         // https://github.com/rollup/rollup-plugin-babel/issues/254, and we can't exlude core-js because it breaks collectDependencies
         useBuiltIns: 'usage',
         // useBuiltIns: false,
@@ -85,6 +116,7 @@ async function getPlugins(plugins: any): Promise<PluginItem[]> {
 }
 
 async function transform({ code, filepath, config }: ITransformData): Promise<ITranspilationResult> {
+  const targets = getDynamicTarget() ?? '> 2.5%, not ie 11, not dead, not op_mini all';
   const requires: Set<string> = new Set();
   const presets = await getPresets(config?.presets ?? []);
   const plugins = await getPlugins(config?.plugins ?? []);
@@ -97,6 +129,7 @@ async function transform({ code, filepath, config }: ITransformData): Promise<IT
     ast: false,
     sourceMaps: 'inline',
     compact: /node_modules/.test(filepath),
+    targets,
   });
 
   // no-op module
