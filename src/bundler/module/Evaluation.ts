@@ -65,7 +65,6 @@ export class Evaluation {
         'color: orange'
       );
     }
-    logger.debug('Evaluation.getExports() :: return value', this.context.exports);
     return this.context.exports;
   }
 
