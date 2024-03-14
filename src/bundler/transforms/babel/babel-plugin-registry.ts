@@ -27,6 +27,13 @@ const BABEL_PLUGIN_LOADERS: Map<string, LoaderFn> = new Map([
       return import('solid-refresh/babel');
     },
   ],
+  [
+    'react-server-use-client',
+    () => {
+      // @ts-ignore
+      return import('../../presets/react/react-server-use-client');
+    },
+  ],
 ]);
 
 function load(key: string, loader: LoaderFn): Promise<any> {

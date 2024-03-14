@@ -50,7 +50,9 @@ export class ReactPreset extends Preset {
                 },
               ],
             ],
-            plugins: this.isServer ? undefined : [['react-refresh/babel', { skipEnvCheck: true }] as ConfigEntry],
+            plugins: this.isServer
+              ? [['react-server-use-client', {}] as ConfigEntry]
+              : [['react-refresh/babel', { skipEnvCheck: true }] as ConfigEntry],
           },
         ],
         ...(this.isServer ? [] : [['react-refresh-transformer', {}] as ConfigEntry]),
