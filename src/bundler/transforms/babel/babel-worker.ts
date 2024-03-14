@@ -1,13 +1,13 @@
 import type { PluginItem } from '@babel/core';
 import * as babel from '@babel/standalone';
-import browserslist from 'browserslist'; // NOTE: be careful, @babel/standalone bundles its own copy...
-import { UAParser } from 'ua-parser-js';
 
 import * as logger from '../../../utils/logger';
+import { once } from '../../../utils/once';
 import { WorkerMessageBus } from '../../../utils/WorkerMessageBus';
 import { ITranspilationResult } from '../Transformer';
 import { loadPlugin, loadPreset } from './babel-plugin-registry';
 import { collectDependencies } from './dep-collector';
+import { getDynamicBabelTarget } from './dynamic-babel-target';
 
 export interface ITransformData {
   code: string;
@@ -23,35 +23,6 @@ function getNameFromConfigEntry(entry: any): string | null {
   } else {
     return null;
   }
-}
-
-let cachedDynamicTarget: undefined | string | string[] | null;
-function getDynamicTarget() {
-  if (cachedDynamicTarget === undefined) {
-    cachedDynamicTarget = getDynamicTargetImpl();
-  }
-  return cachedDynamicTarget;
-}
-
-function getDynamicTargetImpl() {
-  try {
-    const parsed = UAParser(navigator.userAgent);
-    if (parsed.browser.name && parsed.browser.version) {
-      const parsedMajor = parsed.browser.version;
-      // const parsedMajor = parsed.browser.version.replace(/\..+/, '');
-      const browserName = parsed.browser.name.toLowerCase();
-      const target = `${browserName} >= ${parsedMajor} or last 2 ${browserName} versions`;
-      const bl = browserslist(target); // try parsing it to see if browserlist considers it valid
-      if (bl.length === 0) {
-        return null;
-      }
-      logger.debug('Created dynamic browserlist target', target, bl);
-      return bl;
-    }
-  } catch (error) {
-    logger.error('Unable to create navigator-specific browserlist targets');
-  }
-  return null;
 }
 
 // TODO: Normalize preset names
@@ -116,10 +87,11 @@ async function getPlugins(plugins: any): Promise<PluginItem[]> {
 }
 
 async function transform({ code, filepath, config }: ITransformData): Promise<ITranspilationResult> {
-  const targets = getDynamicTarget() ?? '> 2.5%, not ie 11, not dead, not op_mini all';
+  const targets = (await getDynamicBabelTargetCached()) ?? BABEL_TARGET_DEFAULT;
   const requires: Set<string> = new Set();
   const presets = await getPresets(config?.presets ?? []);
   const plugins = await getPlugins(config?.plugins ?? []);
+
   plugins.push(collectDependencies(requires));
   const transformed = babel.transform(code, {
     filename: filepath,
@@ -142,6 +114,31 @@ async function transform({ code, filepath, config }: ITransformData): Promise<IT
     dependencies: requires,
   };
 }
+
+const BABEL_TARGET_DEFAULT = '> 2.5%, not ie 11, not dead, not op_mini all';
+
+const getDefaultBabelConfig = once(async () => {
+  const presets = await getPresets([]).catch((err) => {
+    logger.error('Unable to get default presets, defaulting to empty', err);
+    return [];
+  });
+  const plugins = await getPlugins([]).catch((err) => {
+    logger.error('Unable to get default plugins, defaulting to empty', err);
+    return [];
+  });
+  return { presets, plugins };
+});
+
+const getDynamicBabelTargetCached = once(async () => {
+  // TODO: we could probably try caching this in the main window's LocalStorage
+  // (can't access that in a Worker though, so it's not straightforward)
+  const startTime = performance.now();
+  const config = await getDefaultBabelConfig();
+  const result = getDynamicBabelTarget(config);
+  const endTime = performance.now();
+  logger.debug(`Getting dynamic babel target took ${endTime - startTime}ms`);
+  return result;
+});
 
 new WorkerMessageBus({
   channel: 'sandpack-babel',
