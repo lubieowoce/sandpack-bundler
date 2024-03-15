@@ -95,6 +95,7 @@
     "util": "^0.12.4"
   },
   "resolutions": {
-    "@babel/preset-env": "7.24.0"
+    "@babel/preset-env": "7.24.0",
+    "@swc/core": "1.4.8"
   }
 }
