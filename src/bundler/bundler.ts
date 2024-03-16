@@ -16,6 +16,7 @@ import { ModuleRegistry } from './module-registry';
 import { Module } from './module/Module';
 import { Preset } from './presets/Preset';
 import { getPreset } from './presets/registry';
+import { NO_SUBGRAPH, SUBGRAPHS, SubgraphId, parseSubgraphPath, toSubGraphPath, unSubGraphPath } from './subgraphs';
 
 export type TransformationQueue = NamedPromiseQueue<Module>;
 
@@ -44,7 +45,13 @@ export class Bundler {
   hasHMR = false;
   isFirstLoad = true;
   preset: Preset | undefined;
+
   baseResolveOptions: BaseResolveOptions | undefined;
+
+  hasSubgraphs = false;
+  subgraphByModuleId = new Map<string, SubgraphId>();
+  sharedModules = new Set<string>();
+  subgraphImportConditions: Record<SubgraphId, string[]> | undefined = undefined;
 
   // Map from module id => parent module ids
   initiators = new Map<string, Set<string>>();
@@ -92,14 +99,22 @@ export class Bundler {
 
   registerRuntime(id: string, code: string): void {
     const filepath = `/node_modules/__csb_runtimes/${id}.js`;
+    this.sharedModules.add(filepath);
     this.fs.writeFile(filepath, code);
-    const module = new Module(filepath, code, false, this);
+    const module = new Module(
+      filepath, // TODO(graph): do we need per-graph runtimes?
+      filepath,
+      code,
+      false,
+      this,
+      NO_SUBGRAPH
+    );
     this.modules.set(filepath, module);
     this.runtimes.push(filepath);
   }
 
-  getModule(filepath: string): Module | undefined {
-    return this.modules.get(filepath);
+  getModule(id: string): Module | undefined {
+    return this.modules.get(id);
   }
 
   enableHMR(): void {
@@ -128,7 +143,7 @@ export class Bundler {
     }
   }
 
-  async resolveEntryPoint(): Promise<string> {
+  async resolveEntryPoint(subgraphId: SubgraphId | undefined): Promise<string> {
     if (!this.parsedPackageJSON) {
       throw new BundlerError('No parsed package.json found!');
     }
@@ -142,6 +157,7 @@ export class Bundler {
         this.parsedPackageJSON.main,
         this.parsedPackageJSON.source,
         this.parsedPackageJSON.module,
+        ...(subgraphId ? this.preset.defaultEntryPoints.map((specifier) => specifier + '.' + subgraphId) : []),
         ...this.preset.defaultEntryPoints,
       ].filter((e) => typeof e === 'string')
     );
@@ -152,7 +168,7 @@ export class Bundler {
           // Normalize path
           const entryPoint =
             potentialEntry[0] !== '.' && potentialEntry[0] !== '/' ? `./${potentialEntry}` : potentialEntry;
-          const resolvedEntryPont = await this.resolveAsync(entryPoint, '/index.js');
+          const resolvedEntryPont = await this.resolveAsync(entryPoint, '/index.js', { subgraphId });
           return resolvedEntryPont;
         } catch (err) {
           logger.debug(`Could not resolve entrypoint ${potentialEntry}`);
@@ -195,17 +211,28 @@ export class Bundler {
 
   RESOLVE_EXTENSIONS_DEFAULT = ['.js', '.jsx', '.mjs', '.cjs', '.ts', '.tsx'];
 
-  async resolveAsync(specifier: string, filename: string, extensions?: string[]): Promise<string> {
+  async resolveAsync(
+    rawSpecifier: string,
+    filename: string,
+    { extensions, subgraphId }: { extensions?: string[]; subgraphId?: SubgraphId } = {}
+  ): Promise<string> {
     try {
+      const { resourcePath: specifier } = parseSubgraphPath(rawSpecifier, false);
       const resolved = await resolveAsync(specifier, {
         filename,
         extensions: extensions ?? this.baseResolveOptions?.extensions ?? this.RESOLVE_EXTENSIONS_DEFAULT,
-        conditionNames: this.baseResolveOptions?.conditionNames,
+        conditionNames: subgraphId
+          ? this.subgraphImportConditions?.[subgraphId] ?? this.baseResolveOptions?.conditionNames
+          : this.baseResolveOptions?.conditionNames,
         isFile: this.fs.isFile,
         readFile: this.fs.readFile,
         resolverCache: this.resolverCache,
       });
-      return resolved;
+      if (this.sharedModules.has(resolved)) {
+        return resolved;
+      } else {
+        return toSubGraphPath(resolved, subgraphId);
+      }
     } catch (err) {
       logger.error(err);
       logger.error(Array.from(this.modules));
@@ -214,43 +241,44 @@ export class Bundler {
     }
   }
 
-  private async _transformModule(path: string): Promise<Module> {
-    let module = this.modules.get(path);
+  private async _transformModule(id: string): Promise<Module> {
+    let module = this.modules.get(id);
+    const { resourcePath, subgraphId } = parseSubgraphPath(id, false);
     if (module) {
       if (module.compiled != null) {
         return Promise.resolve(module);
       } else {
         // compilation got reset, we re-read the source to ensure it's the latest version.
         // reset happens mostly when we receive changes from the editor, so this ensures we actually output the changes...
-        module.source = await this.fs.readFileAsync(path);
+        module.source = await this.fs.readFileAsync(resourcePath);
       }
     } else {
-      logger.debug('Module._transformModule :: creating fresh module', path);
-      const content = await this.fs.readFileAsync(path);
-      module = new Module(path, content, false, this);
-      this.modules.set(path, module);
+      logger.debug('Module._transformModule :: creating fresh module', id);
+      const content = await this.fs.readFileAsync(resourcePath);
+      module = new Module(id, resourcePath, content, false, this, subgraphId);
+      this.modules.set(id, module);
     }
     await module.compile();
     for (let dep of module.dependencies) {
-      const resolvedDependency = await this.resolveAsync(dep, module.filepath);
+      const resolvedDependency = await this.resolveAsync(dep, module.filepath, { subgraphId });
       this.transformModule(resolvedDependency);
     }
     return module;
   }
 
   /** Transform file at a certain absolute path */
-  async transformModule(path: string): Promise<Module> {
-    let module = this.modules.get(path);
+  async transformModule(id: string): Promise<Module> {
+    let module = this.modules.get(id);
     if (module && module.compiled != null) {
       return Promise.resolve(module);
     }
-    logger.debug('Bundler :: transformModule', path);
-    const existingItem = this.transformationQueue.getItem(path);
+    logger.debug('Bundler :: transformModule', id);
+    const existingItem = this.transformationQueue.getItem(id);
     if (existingItem) {
       return existingItem;
     }
-    return this.transformationQueue.addEntry(path, () => {
-      return this._transformModule(path);
+    return this.transformationQueue.addEntry(id, () => {
+      return this._transformModule(id);
     });
   }
 
@@ -305,6 +333,10 @@ export class Bundler {
     return res;
   }
 
+  getSubgraphs() {
+    return this.hasSubgraphs ? [SUBGRAPHS.server, SUBGRAPHS.client] : [NO_SUBGRAPH];
+  }
+
   async compile(files: ISandboxFile[]): Promise<() => any> {
     if (!this.preset) {
       throw new BundlerError('Cannot compile before preset has been initialized');
@@ -328,6 +360,8 @@ export class Bundler {
         return () => {};
       }
 
+      logger.debug('Changed files', changedFiles);
+
       // If it's a change and we don't have any hmr modules we simply reload the application
       if (!this.hasHMR) {
         logger.debug('HMR is not enabled, doing a full page refresh');
@@ -343,10 +377,14 @@ export class Bundler {
     if (changedFiles.length) {
       const promises = [];
       for (let changedFile of changedFiles) {
-        const module = this.getModule(changedFile);
-        if (module) {
-          module.resetCompilation();
-          promises.push(this.transformModule(changedFile));
+        const activeSubgraphs = this.getSubgraphs();
+        for (const subgraphId of activeSubgraphs) {
+          const moduleId = toSubGraphPath(changedFile, subgraphId);
+          const module = this.getModule(moduleId);
+          if (module) {
+            module.resetCompilation();
+            promises.push(this.transformModule(moduleId));
+          }
         }
       }
       await Promise.all(promises);
@@ -384,16 +422,20 @@ export class Bundler {
     }
 
     // Resolve entrypoints
-    const resolvedEntryPoint = await this.resolveEntryPoint();
-    logger.debug('Resolved entrypoint:', resolvedEntryPoint);
+    const activeSubgraphs = this.getSubgraphs();
+    const entryModules: Module[] = [];
+    for (const subgraphId of activeSubgraphs) {
+      const resolvedEntryPoint = await this.resolveEntryPoint(subgraphId);
+      logger.debug('Resolved entrypoint:', resolvedEntryPoint);
 
-    // Transform entrypoint and deps
-    const entryModule = await this.transformModule(resolvedEntryPoint);
-    await this.moduleFinishedPromise(resolvedEntryPoint);
-    logger.debug('Bundling finished, manifest:');
-    logger.debug(this.modules);
-
-    entryModule.isEntry = true;
+      // Transform entrypoint and deps
+      const entryModule = await this.transformModule(resolvedEntryPoint);
+      await this.moduleFinishedPromise(resolvedEntryPoint);
+      logger.debug('Bundling finished, manifest:');
+      logger.debug(this.modules);
+      entryModule.isEntry = true;
+      entryModules.push(entryModule);
+    }
 
     const transpiledModules = Array.from(this.modules, ([name, value]) => {
       return {
@@ -402,7 +444,7 @@ export class Bundler {
          */
         [name + ':']: {
           source: {
-            isEntry: entryModule.filepath === value.filepath,
+            isEntry: entryModules.some((entryModule) => entryModule.filepath === value.filepath),
             fileName: value.filepath,
             compiledCode: value.compiled,
           },
@@ -428,8 +470,9 @@ export class Bundler {
             module.evaluate();
           }
         }
-
-        entryModule.evaluate();
+        for (const entryModule of entryModules) {
+          entryModule.evaluate();
+        }
         this.isFirstLoad = false;
       } else {
         this.modules.forEach((module) => {
@@ -444,7 +487,7 @@ export class Bundler {
         const invalidatedModules = Object.values(this.modules).filter((m: Module) => {
           if (m.hot.hmrConfig?.invalidated) {
             m.resetCompilation();
-            this.transformModule(m.filepath);
+            this.transformModule(m.id);
             return true;
           }
 

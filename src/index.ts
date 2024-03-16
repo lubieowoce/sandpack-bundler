@@ -20,7 +20,7 @@ class SandpackInstance {
   private messageBus: IFrameParentMessageBus;
   private disposableStore = new DisposableStore();
   private bundler;
-  private compileDebouncer = new Debouncer(50);
+  private compileDebouncer = new Debouncer(300);
   private lastHeight: number = 0;
   private resizePollingTimer: NodeJS.Timer | undefined;
   private integrations: Integrations | undefined;

@@ -3,6 +3,7 @@ import * as logger from '../../utils/logger';
 import { sortObj } from '../../utils/object';
 import { Bundler } from '../bundler';
 import { Module } from '../module/Module';
+import { NO_SUBGRAPH } from '../subgraphs';
 import { filterBuildDeps } from './build-dep';
 import { ICDNModuleFile, IResolvedDependency, fetchManifest, fetchModule } from './module-cdn';
 import { NodeModule } from './NodeModule';
@@ -72,8 +73,9 @@ export class ModuleRegistry {
       return [];
     }
 
-    const module = new Module(path, file.c, true, this.bundler);
+    const module = new Module(path, path, file.c, true, this.bundler, NO_SUBGRAPH);
     this.bundler.modules.set(path, module);
+    this.bundler.sharedModules.add(path);
     return file.d.map((dep) => {
       return async () => {
         await module.addDependency(dep);

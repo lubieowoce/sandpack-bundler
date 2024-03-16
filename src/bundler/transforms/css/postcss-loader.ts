@@ -13,7 +13,9 @@ async function resolveCSSFile(ctx: ITranspilationContext, path: string, basePath
     if (!parts.filepath.length) {
       // First try to resolve the package.json, in case it has a style field
       try {
-        const pkgJsonPath = await ctx.module.bundler.resolveAsync(joinPaths(path, 'package.json'), basePath, []);
+        const pkgJsonPath = await ctx.module.bundler.resolveAsync(joinPaths(path, 'package.json'), basePath, {
+          extensions: [],
+        });
         const content = await ctx.module.bundler.fs.readFileAsync(pkgJsonPath);
         const parsedPkg = JSON.parse(content);
 
@@ -25,7 +27,7 @@ async function resolveCSSFile(ctx: ITranspilationContext, path: string, basePath
       }
     }
   }
-  return ctx.module.bundler.resolveAsync(path, basePath, ['.css']);
+  return ctx.module.bundler.resolveAsync(path, basePath, { extensions: ['.css'], subgraphId: ctx.module.subgraphId });
 }
 
 export default async function (ctx: ITranspilationContext): Promise<ITranspilationResult> {

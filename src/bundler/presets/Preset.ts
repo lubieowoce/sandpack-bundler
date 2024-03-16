@@ -35,6 +35,10 @@ export class Preset {
     throw new Error('Not implemented');
   }
 
+  getCustomGlobals(module: Module): Record<string, any> | undefined {
+    return undefined;
+  }
+
   getTransformers(module: Module): Array<[Transformer, any]> {
     const transformersMap = this.mapTransformers(module);
     return transformersMap.map((val) => {

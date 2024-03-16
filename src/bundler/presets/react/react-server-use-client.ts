@@ -147,12 +147,18 @@ const createPlugin =
         const stringLiteral = (value: string) => JSON.stringify(value);
         const getProxyExpr = (exportName: string) => {
           const name = stringLiteral(exportName);
-          return `(/*@__PURE__*/ proxy[${name}])`;
+          return `(/*@__PURE__*/ $$wrapForRefresh($$proxy[${name}], ${name}))`;
         };
 
         const generatedCode = [
           `import { createClientModuleProxy } from 'react-server-dom-webpack/server'`,
-          `const proxy = createClientModuleProxy("${getModuleId(file)}")`,
+          `const $$wrapForRefresh = (value, name) => {`,
+          `  if (typeof window.$RefreshReg$ !== 'undefined') {`,
+          `    window.$RefreshReg$(value, name);`,
+          `  }`,
+          `  return value`,
+          `};`,
+          `const $$proxy = createClientModuleProxy("${getModuleId(file)}");`,
         ];
         for (const { localName, exportedName } of self.clientExportNames) {
           const expr = getProxyExpr(localName ?? exportedName);

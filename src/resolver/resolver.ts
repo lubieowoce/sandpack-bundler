@@ -69,7 +69,8 @@ function* loadPackageJSON(
   const directories = getParentDirectories(filepath, rootDir);
   for (const directory of directories) {
     const packageFilePath = pathUtils.join(directory, 'package.json');
-    let packageContent = opts.resolverCache.get(packageFilePath);
+    const cacheKey = `${JSON.stringify(opts.conditionNames)}-${packageFilePath}`;
+    let packageContent = opts.resolverCache.get(cacheKey);
     if (packageContent === undefined) {
       try {
         packageContent = processPackageJSON(
@@ -77,9 +78,9 @@ function* loadPackageJSON(
           pathUtils.dirname(packageFilePath),
           opts.conditionNames
         );
-        opts.resolverCache.set(packageFilePath, packageContent);
+        opts.resolverCache.set(cacheKey, packageContent);
       } catch (err) {
-        opts.resolverCache.set(packageFilePath, false);
+        opts.resolverCache.set(cacheKey, false);
       }
     }
     if (packageContent) {

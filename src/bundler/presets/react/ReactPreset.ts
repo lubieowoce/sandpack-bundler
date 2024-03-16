@@ -1,6 +1,7 @@
 import { Bundler } from '../../bundler';
 import { DepMap } from '../../module-registry';
 import { Module } from '../../module/Module';
+import { SUBGRAPHS } from '../../subgraphs';
 import { BabelTransformer } from '../../transforms/babel';
 import { CSSTransformer } from '../../transforms/css';
 import { ReactRefreshTransformer } from '../../transforms/react-refresh';
@@ -24,7 +25,11 @@ export class ReactPreset extends Preset {
   async init(bundler: Bundler): Promise<void> {
     await super.init(bundler);
     if (this.isServer) {
-      bundler.setResolveOptions({ conditionNames: ['react-server', '...'] });
+      bundler.hasSubgraphs = true;
+      bundler.subgraphImportConditions = {
+        [SUBGRAPHS.client]: ['...'],
+        [SUBGRAPHS.server]: ['react-server', '...'], // TODO(graph): make this customizable by presets, a la `setResolveOptions`
+      };
     }
 
     await Promise.all([
@@ -35,7 +40,22 @@ export class ReactPreset extends Preset {
     ]);
   }
 
+  getCustomGlobals(module: Module) {
+    const subgraphId = module.subgraphId;
+    if (!subgraphId) return undefined;
+    const prefix = {
+      [SUBGRAPHS.client]: 'REACT_CLIENT$',
+      [SUBGRAPHS.server]: 'REACT_SERVER$',
+    }[subgraphId];
+    return {
+      __webpack_chunk_load__: (globalThis as any)[prefix + '__webpack_chunk_load__'],
+      __webpack_require__: (globalThis as any)[prefix + '__webpack_require__'],
+    };
+  }
+
   mapTransformers(module: Module): Array<[string, any]> {
+    const isServer = module.subgraphId === 'server';
+
     if (/^(?!\/node_modules\/).*\.(((m|c)?jsx?)|tsx)$/.test(module.filepath)) {
       type ConfigEntry = [string, any];
       return [
@@ -50,12 +70,15 @@ export class ReactPreset extends Preset {
                 },
               ],
             ],
-            plugins: this.isServer
-              ? [['react-server-use-client', {}] as ConfigEntry]
+            plugins: isServer
+              ? [
+                  ['react-server-use-client', {}] as ConfigEntry,
+                  ['react-refresh/babel', { skipEnvCheck: true }] as ConfigEntry,
+                ]
               : [['react-refresh/babel', { skipEnvCheck: true }] as ConfigEntry],
           },
         ],
-        ...(this.isServer ? [] : [['react-refresh-transformer', {}] as ConfigEntry]),
+        ['react-refresh-transformer', {}] as ConfigEntry,
       ];
     }
 

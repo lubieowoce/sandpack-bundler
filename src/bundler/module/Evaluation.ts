@@ -1,4 +1,5 @@
 import * as logger from '../../utils/logger';
+import { SUBGRAPHS, SubgraphId, getSubgraphFileUrl } from '../subgraphs';
 import evaluate from './eval';
 import { HotContext } from './hot';
 import { Module } from './Module';
@@ -8,12 +9,14 @@ class EvaluationContext {
   globals: any;
   hot: HotContext;
   id: string;
+  subgraphId?: SubgraphId;
 
   constructor(evaluation: Evaluation) {
     this.exports = {};
     this.globals = {};
     this.hot = evaluation.module.hot;
     this.id = evaluation.module.id;
+    this.subgraphId = evaluation.module.subgraphId;
   }
 }
 
@@ -44,12 +47,17 @@ export class Evaluation {
       if (this.module.compiled === null) {
         throw new Error(`Internal error :: module "${this.module.id}" was not compiled before evaluating`);
       }
-      const code = this.module.compiled + `\n//# sourceURL=${location.origin}${this.module.filepath}`;
+      const sourceUrl = new URL(
+        this.module.subgraphId ? getSubgraphFileUrl(this.module.id) : this.module.filepath,
+        location.origin
+      ).href;
+      const code = this.module.compiled + `\n//# sourceURL=${sourceUrl}`;
+      const customGlobals = this.module.bundler.preset?.getCustomGlobals(this.module);
 
       this.status = EvaluationStatus.Started;
       logger.debug(`%cEvaluation.getExports() :: evaluating '${this.module.id}'`, 'color: green');
       try {
-        this.context.exports = evaluate(code, this.require.bind(this), this.context, {}, {}) ?? {};
+        this.context.exports = evaluate(code, this.require.bind(this), this.context, {}, customGlobals) ?? {};
         this.status = EvaluationStatus.Finished;
       } catch (err) {
         this.error = err;
@@ -71,8 +79,8 @@ export class Evaluation {
   require(specifier: string): any {
     try {
       logger.groupCollapsed(`Evaluation :: require(${JSON.stringify(specifier)})`, { importer: this.module.id });
-      const moduleFilePath = this.module.dependencyMap.get(specifier);
-      if (!moduleFilePath) {
+      const moduleId = this.module.dependencyMap.get(specifier);
+      if (!moduleId) {
         // statically analyzable modules would have been resolved
         // and added to dependencyMap earlier, in Module#compile().
         // so if that didn't happen, and we got to this point,
@@ -99,9 +107,9 @@ export class Evaluation {
 
         // throw new Error(`Dependency "${specifier}" not collected from "${this.module.filepath}"`);
       }
-      const module = this.module.bundler.getModule(moduleFilePath);
+      const module = this.module.bundler.getModule(moduleId);
       if (!module) {
-        throw new Error(`Module "${moduleFilePath}" has not been transpiled`);
+        throw new Error(`Module "${moduleId}" has not been transpiled`);
       }
       return module.evaluate().getExports() ?? {};
     } finally {
@@ -112,7 +120,11 @@ export class Evaluation {
 
 async function prepareDynamicImport(importer: Module, specifier: string) {
   await importer.addDependency(specifier);
-  const moduleFilePath = importer.dependencyMap.get(specifier)!;
-  await importer.bundler.transformModule(moduleFilePath);
-  await importer.bundler.moduleFinishedPromise(moduleFilePath);
+  const moduleId = importer.dependencyMap.get(specifier)!;
+  await importer.bundler.transformModule(moduleId);
+  logger.debug(
+    `prepareDynamicImport(importer=${importer.id}, specifier=${specifier})`,
+    importer.bundler.getModule(moduleId)
+  );
+  await importer.bundler.moduleFinishedPromise(moduleId);
 }

@@ -9,6 +9,8 @@
 
 import { SourceMapConsumer } from 'source-map';
 
+import { getResourcePathFromSubgraphFileUrl } from '../bundler/subgraphs';
+
 /**
  * A wrapped instance of a <code>{@link https://github.com/mozilla/source-map SourceMapConsumer}</code>.
  *
@@ -83,7 +85,7 @@ function extractSourceMapUrl(fileUri: string, fileContents: string) {
   if (!(match && match[1])) {
     return Promise.reject(`Cannot find a source map directive for ${fileUri}.`);
   }
-  return Promise.resolve(match[1].toString());
+  return Promise.resolve(getResourcePathFromSubgraphFileUrl(match[1].toString()));
 }
 
 /**

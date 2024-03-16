@@ -1,6 +1,7 @@
 import { BundlerError } from '../../errors/BundlerError';
 import { debug } from '../../utils/logger';
 import { Bundler } from '../bundler';
+import { SubgraphId } from '../subgraphs';
 import { Evaluation } from './Evaluation';
 import { HotContext } from './hot';
 
@@ -12,6 +13,7 @@ export class Module {
   id: string;
   filepath: string;
   isEntry = false;
+  subgraphId?: SubgraphId;
   source: string;
   compiled: string | null;
   bundler: Bundler;
@@ -24,10 +26,18 @@ export class Module {
   // Keeping this seperate from dependencies as there might be duplicates otherwise
   dependencyMap: Map<string, string>;
 
-  constructor(filepath: string, source: string, isCompiled: boolean = false, bundler: Bundler) {
-    this.id = filepath;
+  constructor(
+    id: string,
+    filepath: string,
+    source: string,
+    isCompiled: boolean = false,
+    bundler: Bundler,
+    subgraphId: SubgraphId | undefined
+  ) {
+    this.id = id;
     this.filepath = filepath;
     this.source = source;
+    this.subgraphId = subgraphId;
     this.compiled = isCompiled ? source : null;
     this.dependencies = new Set();
     this.dependencyMap = new Map();
@@ -46,7 +56,7 @@ export class Module {
 
   /** Add dependency */
   async addDependency(depSpecifier: string): Promise<void> {
-    const resolved = await this.bundler.resolveAsync(depSpecifier, this.filepath);
+    const resolved = await this.bundler.resolveAsync(depSpecifier, this.filepath, { subgraphId: this.subgraphId });
     this.dependencies.add(resolved);
     this.dependencyMap.set(depSpecifier, resolved);
     this.bundler.addInitiator(resolved, this.id);
@@ -64,11 +74,15 @@ export class Module {
 
       const transformers = preset.getTransformers(this);
       if (!transformers.length) {
-        throw new Error(`No transformers found for ${this.filepath}`);
+        throw new Error(`No transformers found for ${this.id}`);
       }
 
       let code = this.source;
       for (const [transformer, config] of transformers) {
+        // TODO(graph): somehewhere in here we need to check for "use client" / "use server"
+        // TODO(graph): when we encounter a graph fork, we need to emit two modules.
+        // but what do we set as the importer of the "client" module? maybe just the entrypoint?
+        // in reality, that'll be the place that does the __webpack_require__...
         const transformationResult = await transformer.transform(
           {
             module: this,
@@ -106,6 +120,7 @@ export class Module {
     this.evaluation = null;
 
     if (this.hot.hmrConfig && this.hot.hmrConfig.isHot()) {
+      debug(`Module::resetCompilation(): setting ${this.id} to dirty`);
       this.hot.hmrConfig.setDirty(true);
     } else {
       // for (let initiator of this.initiators) {
@@ -121,11 +136,11 @@ export class Module {
       //     module?.resetCompilation();
       //   }
       // }
-
+      debug(`Module::resetCompilation(): Reloading window because module ${this.id} is not hot`);
       location.reload();
     }
 
-    this.bundler.transformModule(this.filepath);
+    this.bundler.transformModule(this.id);
   }
 
   evaluate(): Evaluation {
@@ -133,9 +148,10 @@ export class Module {
       debug(`Module.evaluate() :: already evaluat${[0, 1].includes(this.evaluation.status) ? 'ing' : 'ed'}`, this.id);
       return this.evaluation;
     }
-    debug('%cModule.evaluate() :: starting new evaluation', 'color: tomato', this.id);
+    debug(`%cModule.evaluate() :: starting new evaluation (hot: ${this.isHot()})`, 'color: tomato', this.id);
 
     if (this.hot.hmrConfig) {
+      debugger;
       // this.bundler.setHmrStatus('dispose');
       // Call module.hot.dispose handler
       // https://webpack.js.org/api/hot-module-replacement/#dispose-or-adddisposehandler-
@@ -147,7 +163,7 @@ export class Module {
     this.hot = this.hot.clone();
     this.evaluation = new Evaluation(this);
     // NOTE: ensure that this is assigned to `this.evaluation` before running,
-    // otherwise circular imports triggered by `.run()` won't see it, and will try to evaluate again
+    // otherwise circular imports triggered by `.getExports()` won't see it, and will try to evaluate again
     this.evaluation.getExports();
 
     // this.bundler.setHmrStatus('apply');

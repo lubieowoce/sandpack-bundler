@@ -37,7 +37,9 @@ export class HotContext {
       const paths = typeof path === 'string' ? [path] : path;
 
       paths.forEach(async (p) => {
-        const resolvedPath = await this.module.bundler.resolveAsync(p, this.module.filepath);
+        const resolvedPath = await this.module.bundler.resolveAsync(p, this.module.filepath, {
+          subgraphId: this.module.subgraphId, // TODO(graph): not sure about this...
+        });
         const module = this.module.bundler.getModule(resolvedPath);
         if (module) {
           const hmrConfig = module.hot.ensureHMRConfig();
@@ -57,7 +59,9 @@ export class HotContext {
       const paths = typeof path === 'string' ? [path] : path;
 
       paths.forEach(async (p) => {
-        const resolvedPath = await this.module.bundler.resolveAsync(p, this.module.filepath);
+        const resolvedPath = await this.module.bundler.resolveAsync(p, this.module.filepath, {
+          subgraphId: this.module.subgraphId, // TODO(graph): not sure about this...
+        });
         const module = this.module.bundler.getModule(resolvedPath);
         if (module) {
           const hmrConfig = module.hot.ensureHMRConfig();

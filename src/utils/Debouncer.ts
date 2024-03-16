@@ -1,7 +1,7 @@
 import * as logger from '../utils/logger';
 
 export class Debouncer {
-  timeoutRef: NodeJS.Timeout | null = null;
+  timeoutRef: ReturnType<typeof setTimeout> | null = null;
   debounceTimeMs: number;
   isRunning = false;
 
