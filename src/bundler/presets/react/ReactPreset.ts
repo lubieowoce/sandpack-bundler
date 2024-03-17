@@ -58,6 +58,7 @@ export class ReactPreset extends Preset {
 
     if (/^(?!\/node_modules\/).*\.(((m|c)?jsx?)|tsx)$/.test(module.filepath)) {
       type ConfigEntry = [string, any];
+      const reactRefresh = ['react-refresh/babel', { skipEnvCheck: true, emitFullSignatures: true }] as ConfigEntry;
       return [
         [
           'babel-transformer',
@@ -70,12 +71,7 @@ export class ReactPreset extends Preset {
                 },
               ],
             ],
-            plugins: isServer
-              ? [
-                  ['react-server-use-client', {}] as ConfigEntry,
-                  ['react-refresh/babel', { skipEnvCheck: true }] as ConfigEntry,
-                ]
-              : [['react-refresh/babel', { skipEnvCheck: true }] as ConfigEntry],
+            plugins: isServer ? [['react-server-use-client', {}] as ConfigEntry, reactRefresh] : [reactRefresh],
           },
         ],
         ['react-refresh-transformer', {}] as ConfigEntry,
@@ -112,7 +108,7 @@ export class ReactPreset extends Preset {
 
   augmentDependencies(dependencies: DepMap): DepMap {
     if (!dependencies['react-refresh']) {
-      dependencies['react-refresh'] = '^0.11.0';
+      dependencies['react-refresh'] = this.isServer ? 'canary' : '^0.14.0';
     }
     dependencies['core-js'] = '3.22.7';
     return dependencies;
