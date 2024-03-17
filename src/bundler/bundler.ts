@@ -167,7 +167,7 @@ export class Bundler {
           // Normalize path
           const entryPoint =
             potentialEntry[0] !== '.' && potentialEntry[0] !== '/' ? `./${potentialEntry}` : potentialEntry;
-          const resolvedEntryPont = await this.resolveAsync(entryPoint, '/index.js', { subgraphId });
+          const resolvedEntryPont = await this.resolveAsync(entryPoint, '/index.js', { subgraphId, quiet: true });
           return resolvedEntryPont;
         } catch (err) {
           // no need to log the error here, if we don't find an entry we log below
@@ -212,7 +212,7 @@ export class Bundler {
   async resolveAsync(
     rawSpecifier: string,
     filename: string,
-    { extensions, subgraphId }: { extensions?: string[]; subgraphId?: SubgraphId } = {}
+    { extensions, subgraphId, quiet = false }: { extensions?: string[]; subgraphId?: SubgraphId; quiet?: boolean } = {}
   ): Promise<string> {
     try {
       const { resourcePath: specifier } = parseSubgraphPath(rawSpecifier, false);
@@ -232,9 +232,11 @@ export class Bundler {
         return toSubGraphPath(resolved, subgraphId);
       }
     } catch (err) {
-      logger.error(err);
-      logger.error(Array.from(this.modules));
-      // logger.error(Array.from(this.fs.files));
+      if (!quiet) {
+        logger.error(err);
+        logger.error(Array.from(this.modules));
+        // logger.error(Array.from(this.fs.files));
+      }
       throw err;
     }
   }
