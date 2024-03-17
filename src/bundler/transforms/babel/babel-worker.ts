@@ -88,6 +88,16 @@ async function getPlugins(plugins: any): Promise<PluginItem[]> {
   return result;
 }
 
+const collectModuleForkInfo = (onResult: (isModuleFork: boolean) => void) => {
+  return {
+    post(file: any) {
+      const isModuleFork = !!file.path.node.extra?.['sandpack-bundler.is-module-fork'];
+      onResult(isModuleFork);
+    },
+    visitor: {},
+  };
+};
+
 async function transform({ code, filepath, subgraphId, config }: ITransformData): Promise<ITranspilationResult> {
   const targets = (await getDynamicBabelTargetCached()) ?? BABEL_TARGET_DEFAULT;
   const requires: Set<string> = new Set();
@@ -97,6 +107,14 @@ async function transform({ code, filepath, subgraphId, config }: ITransformData)
   // TODO(graphs): check for "use client" / "use server" here, and notify the bundler that this is a subgraph fork
   // so that it can process the module in the other subgraph too?
   plugins.push(collectDependencies(requires));
+
+  let isModuleFork = false;
+  plugins.push(
+    collectModuleForkInfo((result) => {
+      isModuleFork = result;
+    })
+  );
+
   const transformed = babel.transform(code, {
     filename: filepath,
     presets,
@@ -116,6 +134,7 @@ async function transform({ code, filepath, subgraphId, config }: ITransformData)
   return {
     code: transformed.code,
     dependencies: requires,
+    isSubgraphFork: isModuleFork,
   };
 }
 

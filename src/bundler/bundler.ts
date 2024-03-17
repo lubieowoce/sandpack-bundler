@@ -51,6 +51,7 @@ export class Bundler {
   hasSubgraphs = false;
   sharedModules = new Set<string>();
   subgraphImportConditions: Record<SubgraphId, string[]> | undefined = undefined;
+  isResourceSubgraphFork = new Map<string, { from: SubgraphId; to: SubgraphId }>();
 
   // Map from module id => parent module ids
   initiators = new Map<string, Set<string>>();
@@ -333,8 +334,24 @@ export class Bundler {
     return res;
   }
 
-  getSubgraphs() {
-    return this.hasSubgraphs ? [SUBGRAPHS.server, SUBGRAPHS.client] : [NO_SUBGRAPH];
+  getSubgraphs(hot = true) {
+    if (!this.hasSubgraphs) return [NO_SUBGRAPH];
+    if (hot) {
+      return [SUBGRAPHS.client, SUBGRAPHS.server];
+    } else {
+      return [SUBGRAPHS.server, SUBGRAPHS.client];
+    }
+  }
+
+  getSubgraphFork(module: Module) {
+    return this.isResourceSubgraphFork.get(module.filepath);
+  }
+  setSubgraphFork(module: Module, value: { from: SubgraphId; to: SubgraphId } | undefined) {
+    if (!value) {
+      this.isResourceSubgraphFork.delete(module.filepath);
+    } else {
+      this.isResourceSubgraphFork.set(module.filepath, value);
+    }
   }
 
   async compile(files: ISandboxFile[]): Promise<() => any> {
@@ -447,6 +464,7 @@ export class Bundler {
             isEntry: entryModules.some((entryModule) => entryModule.filepath === value.filepath),
             fileName: value.filepath,
             compiledCode: value.compiled,
+            primarySubgraph: this.getSubgraphFork(value)?.to ?? value.subgraphId ?? null,
           },
         },
       };

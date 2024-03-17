@@ -1,7 +1,7 @@
 import { BundlerError } from '../../errors/BundlerError';
 import { debug } from '../../utils/logger';
 import { Bundler } from '../bundler';
-import { SubgraphId } from '../subgraphs';
+import { SUBGRAPHS, SubgraphId, parseSubgraphPath, toSubGraphPath } from '../subgraphs';
 import { Evaluation } from './Evaluation';
 import { HotContext } from './hot';
 
@@ -95,6 +95,47 @@ export class Module {
           this.compilationError = transformationResult;
         } else {
           code = transformationResult.code;
+          if (this.subgraphId) {
+            const prevSubgraphFork = this.bundler.getSubgraphFork(this);
+            let currentPrimarySubgraphId;
+            if (transformationResult.isSubgraphFork) {
+              // we're in this subgraph, but the module also lives in the other subgraph.
+              // TODO(graphs): VERY hardcoded
+              const otherGraphMap = { [SUBGRAPHS.client]: SUBGRAPHS.server, [SUBGRAPHS.server]: SUBGRAPHS.client };
+              const otherSubgraphId = otherGraphMap[this.subgraphId];
+              const resourcePath = this.filepath;
+              const otherId = toSubGraphPath(resourcePath, otherSubgraphId);
+
+              currentPrimarySubgraphId = otherSubgraphId;
+              debug(
+                `Module::compile() :: found subgraph fork from ${this.subgraphId} to ${otherSubgraphId}, issuing transformModule for`,
+                otherId
+              );
+              this.bundler.setSubgraphFork(this, { from: this.subgraphId!, to: currentPrimarySubgraphId });
+              void this.bundler.transformModule(otherId);
+            } else {
+              currentPrimarySubgraphId = this.subgraphId;
+              debug(
+                `Module::compile(${this.id}) :: not a fork, setting primary subgraph to ${currentPrimarySubgraphId}`
+              );
+              // this is not a subgraph for. clear any possible previous fork status this might've had.
+              this.bundler.setSubgraphFork(this, undefined);
+            }
+
+            if (prevSubgraphFork !== undefined) {
+              const prevPrimarySubgraphId = prevSubgraphFork.to;
+              // TODO(graphs): do we need to manually invalidate here? the react-refresh extension already does that,
+              // but maybe we need a generic method too? not sure, because OTOH this'd probably mess with react-refresh
+              //
+              // const previousModule = this.bundler.getModule(toSubGraphPath(this.filepath, prevPrimarySubgraphId));
+              // if (previousModule && previousModule.isHot()) {
+              //   previousModule.hot.invalidate();
+              // }
+              debug(
+                `Module::compile() :: primary subgraph for ${this.filepath} changed from ${prevPrimarySubgraphId} to ${currentPrimarySubgraphId}`
+              );
+            }
+          }
           await Promise.all(
             Array.from(transformationResult.dependencies).map((d) => {
               return this.addDependency(d);

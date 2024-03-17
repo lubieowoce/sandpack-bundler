@@ -6,6 +6,7 @@ export type ITranspilationResult =
   | {
       code: string;
       dependencies: Set<string>;
+      isSubgraphFork?: boolean;
     }
   | BundlerError;
 

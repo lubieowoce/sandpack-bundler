@@ -177,7 +177,12 @@ const createPlugin =
           console.log('react-server-use-client ::', generatedCode);
         }
 
-        file.path.replaceWith(t.program(ast as Parameters<(typeof t)['program']>[0], undefined, 'module'));
+        const [newPath] = file.path.replaceWith(
+          t.program(ast as Parameters<(typeof t)['program']>[0], undefined, 'module')
+        );
+
+        newPath.node.extra ??= {};
+        newPath.node.extra['sandpack-bundler.is-module-fork'] = true;
       },
 
       // we do everything in pre, so that other plugins already see the proxy-fied code.
