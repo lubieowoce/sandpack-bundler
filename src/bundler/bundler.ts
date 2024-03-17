@@ -170,8 +170,7 @@ export class Bundler {
           const resolvedEntryPont = await this.resolveAsync(entryPoint, '/index.js', { subgraphId });
           return resolvedEntryPont;
         } catch (err) {
-          logger.debug(`Could not resolve entrypoint ${potentialEntry}`);
-          logger.debug(err);
+          // no need to log the error here, if we don't find an entry we log below
         }
       }
     }
