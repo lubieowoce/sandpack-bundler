@@ -1,8 +1,6 @@
 import { BundlerError } from './BundlerError';
 
 export const errorMessage = (error: BundlerError) => {
-  console.error('sandpack-bundler :: errorMessage', error);
-  // debugger;
   return {
     type: 'action',
     action: 'show-error',
