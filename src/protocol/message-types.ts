@@ -1,9 +1,10 @@
+import { PresetInput } from '../bundler/presets/registry';
 import { ISandboxFile } from '../types';
 import { SandpackLogLevel } from '../utils/logger';
 
 export interface ICompileRequest {
   version: number;
-  template: string;
+  template: PresetInput;
   modules: Record<string, ISandboxFile>;
 
   clearConsoleDisabled?: boolean;

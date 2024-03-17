@@ -9,7 +9,7 @@ import { Preset } from '../Preset';
 export class SolidPreset extends Preset {
   defaultHtmlBody = '<div id="app"></div>';
 
-  constructor() {
+  constructor(_options: any) {
     super('solid');
   }
 

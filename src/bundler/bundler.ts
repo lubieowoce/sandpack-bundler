@@ -15,7 +15,7 @@ import { nullthrows } from '../utils/nullthrows';
 import { ModuleRegistry } from './module-registry';
 import { Module } from './module/Module';
 import { Preset } from './presets/Preset';
-import { getPreset } from './presets/registry';
+import { PresetInput, getPreset } from './presets/registry';
 import { NO_SUBGRAPH, SUBGRAPHS, SubgraphId, parseSubgraphPath, toSubGraphPath, unSubGraphPath } from './subgraphs';
 
 export type TransformationQueue = NamedPromiseQueue<Module>;
@@ -89,7 +89,7 @@ export class Bundler {
     this.baseResolveOptions = { ...this.baseResolveOptions, ...resolveOptions };
   }
 
-  async initPreset(preset: string): Promise<void> {
+  async initPreset(preset: PresetInput): Promise<void> {
     if (!this.preset) {
       this.preset = getPreset(preset);
       await this.preset.init(this);
