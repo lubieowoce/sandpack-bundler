@@ -73,6 +73,7 @@ export class Bundler {
     this.moduleRegistry = new ModuleRegistry(this);
     const memoryFS = new MemoryFSLayer();
     memoryFS.writeFile('//empty.js', 'module.exports = () => {};');
+    this.sharedModules.add('//empty.js');
     this.iFrameFsLayer = new IFrameFSLayer(memoryFS, options.messageBus);
     this.fs = new FileSystem([memoryFS, this.iFrameFsLayer, new NodeModuleFSLayer(this.moduleRegistry)]);
     this.messageBus = options.messageBus;

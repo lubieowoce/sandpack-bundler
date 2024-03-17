@@ -4,11 +4,12 @@ import { Module } from '../../module/Module';
 import { SUBGRAPHS } from '../../subgraphs';
 import { BabelTransformer } from '../../transforms/babel';
 import { CSSTransformer } from '../../transforms/css';
+import { MockFSTransformer } from '../../transforms/mock-fs';
 import { ReactRefreshTransformer } from '../../transforms/react-refresh';
 import { StyleTransformer } from '../../transforms/style';
 import { Preset } from '../Preset';
 
-type ReactPresetOpts = { type: 'server' | 'client' };
+type ReactPresetOpts = { type: 'server' | 'client'; fs?: boolean };
 const DEFAULT_OPTS: ReactPresetOpts = { type: 'client' };
 
 export class ReactPreset extends Preset {
@@ -18,8 +19,8 @@ export class ReactPreset extends Preset {
 
   constructor(opts: ReactPresetOpts = DEFAULT_OPTS) {
     super(opts.type === 'server' ? 'react-server' : 'react');
-    this.opts = opts;
     this.isServer = opts.type === 'server';
+    this.opts = { ...DEFAULT_OPTS, fs: this.isServer, ...opts };
   }
 
   async init(bundler: Bundler): Promise<void> {
@@ -37,6 +38,7 @@ export class ReactPreset extends Preset {
       this.registerTransformer(new ReactRefreshTransformer()),
       this.registerTransformer(new CSSTransformer()),
       this.registerTransformer(new StyleTransformer()),
+      this.opts.fs && this.registerTransformer(new MockFSTransformer({ addServerOnly: false })),
     ]);
   }
 
@@ -107,6 +109,10 @@ export class ReactPreset extends Preset {
   }
 
   augmentDependencies(dependencies: DepMap): DepMap {
+    if (this.opts.fs) {
+      const transformer = this.getTransformer('mock-fs-transformer');
+      dependencies = (transformer as MockFSTransformer).augmentDependencies(dependencies);
+    }
     if (!dependencies['react-refresh']) {
       dependencies['react-refresh'] = this.isServer ? 'canary' : '^0.14.0';
     }
