@@ -49,7 +49,6 @@ export class Bundler {
   baseResolveOptions: BaseResolveOptions | undefined;
 
   hasSubgraphs = false;
-  subgraphByModuleId = new Map<string, SubgraphId>();
   sharedModules = new Set<string>();
   subgraphImportConditions: Record<SubgraphId, string[]> | undefined = undefined;
 
