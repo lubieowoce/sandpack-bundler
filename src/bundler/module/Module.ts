@@ -166,6 +166,11 @@ export class Module {
     // otherwise circular imports triggered by `.getExports()` won't see it, and will try to evaluate again
     this.evaluation.getExports();
 
+    if (!this.evaluation) {
+      // this can happen if the module calls `module.hot.invalidate()` or `module.hot.decline()`.
+      throw new EvaluationResetError(`Evaluation reset while evaluating ${this.id}`);
+    }
+
     // this.bundler.setHmrStatus('apply');
     if (this.hot.hmrConfig && this.hot.hmrConfig.isHot()) {
       this.hot.hmrConfig.setDirty(false);
@@ -176,3 +181,5 @@ export class Module {
     return this.evaluation;
   }
 }
+
+export class EvaluationResetError extends Error {}

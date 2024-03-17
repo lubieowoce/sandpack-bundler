@@ -13,7 +13,7 @@ import * as logger from '../utils/logger';
 import { NamedPromiseQueue } from '../utils/NamedPromiseQueue';
 import { nullthrows } from '../utils/nullthrows';
 import { ModuleRegistry } from './module-registry';
-import { Module } from './module/Module';
+import { EvaluationResetError, Module } from './module/Module';
 import { Preset } from './presets/Preset';
 import { PresetInput, getPreset } from './presets/registry';
 import { NO_SUBGRAPH, SUBGRAPHS, SubgraphId, parseSubgraphPath, toSubGraphPath, unSubGraphPath } from './subgraphs';
@@ -475,7 +475,15 @@ export class Bundler {
       } else {
         this.modules.forEach((module) => {
           if (module.hot.hmrConfig?.isDirty()) {
-            module.evaluate();
+            try {
+              module.evaluate();
+            } catch (err) {
+              if (err && typeof err === 'object' && err instanceof EvaluationResetError) {
+                // do nothing, we will reset the compilation below anyway.
+              } else {
+                throw err;
+              }
+            }
           }
         });
 

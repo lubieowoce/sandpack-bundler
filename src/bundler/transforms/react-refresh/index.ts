@@ -190,8 +190,28 @@ function replaceServerExportsWithRefreshableWrappers(module) {
       const {globalId, localId} = maybeRefreshableInfo;
       const latestImpl = exportValue;
       const previousImpl = refreshableServerComponentsImpls.get(globalId);
+      const isAClientReference = isClientReference(latestImpl);
       let newExportValue;
-      if (isClientReference(latestImpl)) {
+
+      if (previousImpl !== undefined) {
+        const wasAClientReference = isClientReference(previousImpl);
+        if (isAClientReference !== wasAClientReference) {
+          // module changed from client to server or vice versa, we have to invalidate it.
+          if (module.hot) {
+            // TODO(graphs): is this correct?
+            const isHotUpdate = !!module.hot.data;
+            if (isHotUpdate) {
+              module.hot.decline()
+            } else {
+              // module.hot.invalidate();
+            }
+          };
+          continue; // do not update the export yet, invalidation will take care of it, and we avoid nasty intermediate errors
+        }
+      }
+
+
+      if (isAClientReference) {
         // we cannot wrap client references in any useful way, so just reuse the previous one instead.
         if (!previousImpl) {
           const wrapped = getSafeRegisterValue(latestImpl);
