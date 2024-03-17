@@ -16,7 +16,7 @@ import { ModuleRegistry } from './module-registry';
 import { EvaluationResetError, Module } from './module/Module';
 import { Preset } from './presets/Preset';
 import { PresetInput, getPreset } from './presets/registry';
-import { NO_SUBGRAPH, SUBGRAPHS, SubgraphId, parseSubgraphPath, toSubGraphPath, unSubGraphPath } from './subgraphs';
+import { NO_SUBGRAPH, SUBGRAPHS, SubgraphId, getOtherSubgraph, parseSubgraphPath, toSubGraphPath } from './subgraphs';
 
 export type TransformationQueue = NamedPromiseQueue<Module>;
 
@@ -29,6 +29,11 @@ interface IFSOptions {
 }
 
 type BaseResolveOptions = Partial<Pick<IResolveOptionsInput, 'conditionNames' | 'extensions'>>;
+
+type SubgraphForkInfo = {
+  source: { subgraphId: SubgraphId; moduleId: string };
+  target: { subgraphId: SubgraphId; moduleId: string };
+};
 
 export class Bundler {
   private lastHTML: string | null = null;
@@ -51,7 +56,7 @@ export class Bundler {
   hasSubgraphs = false;
   sharedModules = new Set<string>();
   subgraphImportConditions: Record<SubgraphId, string[]> | undefined = undefined;
-  isResourceSubgraphFork = new Map<string, { from: SubgraphId; to: SubgraphId }>();
+  isResourceSubgraphFork = new Map<string, SubgraphForkInfo>();
 
   // Map from module id => parent module ids
   initiators = new Map<string, Set<string>>();
@@ -334,19 +339,63 @@ export class Bundler {
     return res;
   }
 
-  getSubgraphs(hot = true) {
+  getSubgraphs() {
     if (!this.hasSubgraphs) return [NO_SUBGRAPH];
-    if (hot) {
-      return [SUBGRAPHS.client, SUBGRAPHS.server];
-    } else {
-      return [SUBGRAPHS.server, SUBGRAPHS.client];
+    return [SUBGRAPHS.server, SUBGRAPHS.client];
+  }
+
+  getModuleConterpartInfo(module: Module) {
+    const subgraphId = module.subgraphId;
+    if (!subgraphId) {
+      return undefined;
     }
+
+    const otherSubgraphId = getOtherSubgraph(subgraphId);
+    const resourcePath = module.filepath;
+    return { subgraphId: otherSubgraphId, moduleId: toSubGraphPath(resourcePath, otherSubgraphId) };
+  }
+
+  getModuleConterpart(module: Module) {
+    const other = this.getModuleConterpartInfo(module);
+    if (!other) {
+      return undefined;
+    }
+    const otherModule = this.getModule(other.moduleId);
+    if (otherModule && !otherModule.subgraphId) {
+      // this probably shouldn't ever happen
+      logger.error(`getModuleConterpart :: Unexpected missing subgraphId for module ${otherModule.id}`);
+      return undefined;
+    }
+    type ModuleWithSubgraphId = Module & Required<Pick<Module, 'subgraphId'>>;
+    return otherModule as ModuleWithSubgraphId;
+  }
+
+  getModuleSubgraphs(module: Module): SubgraphId | SubgraphId[] | undefined {
+    const fork = this.getSubgraphFork(module);
+    if (fork) {
+      return fork.target.subgraphId;
+    }
+    const subgraphId = module.subgraphId;
+    if (!subgraphId) {
+      return undefined;
+    }
+
+    // check if this module has a counterpart in the other subgraph.
+    // if it does, it's a shared module
+    // (we've already eliminated forks above)
+    const otherModule = this.getModuleConterpart(module);
+    if (otherModule) {
+      const otherSubgraphId = otherModule.subgraphId;
+      return [subgraphId, otherSubgraphId];
+    }
+
+    return subgraphId;
   }
 
   getSubgraphFork(module: Module) {
     return this.isResourceSubgraphFork.get(module.filepath);
   }
-  setSubgraphFork(module: Module, value: { from: SubgraphId; to: SubgraphId } | undefined) {
+  setSubgraphFork(module: Module, value: SubgraphForkInfo | undefined) {
     if (!value) {
       this.isResourceSubgraphFork.delete(module.filepath);
     } else {
@@ -464,7 +513,7 @@ export class Bundler {
             isEntry: entryModules.some((entryModule) => entryModule.filepath === value.filepath),
             fileName: value.filepath,
             compiledCode: value.compiled,
-            primarySubgraph: this.getSubgraphFork(value)?.to ?? value.subgraphId ?? null,
+            subgraphs: this.getModuleSubgraphs(value) ?? null,
           },
         },
       };

@@ -7,6 +7,8 @@ export const NO_SUBGRAPH = undefined;
 
 const SUBGRAPH_VALUES: SubgraphId[] = [SUBGRAPHS.client, SUBGRAPHS.server];
 
+const OTHER_SUBGRAPH_MAP = { [SUBGRAPHS.client]: SUBGRAPHS.server, [SUBGRAPHS.server]: SUBGRAPHS.client };
+
 export type SubgraphId = 'client' | 'server';
 
 // TODO: maybe, if subgraphs are not specified, we just put everything into '(client)'?
@@ -75,4 +77,8 @@ export function getResourcePathFromSubgraphFileUrl(url: string): string {
     return url;
   }
   return parseSubgraphPath(url.slice(1), false).resourcePath;
+}
+
+export function getOtherSubgraph(subgraphId: SubgraphId): SubgraphId {
+  return OTHER_SUBGRAPH_MAP[subgraphId];
 }

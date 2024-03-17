@@ -1,7 +1,7 @@
 import { BundlerError } from '../../errors/BundlerError';
 import { debug } from '../../utils/logger';
 import { Bundler } from '../bundler';
-import { SUBGRAPHS, SubgraphId, parseSubgraphPath, toSubGraphPath } from '../subgraphs';
+import { SubgraphId } from '../subgraphs';
 import { Evaluation } from './Evaluation';
 import { HotContext } from './hot';
 
@@ -77,6 +77,7 @@ export class Module {
         throw new Error(`No transformers found for ${this.id}`);
       }
 
+      let markedAsSubgraphFork = false;
       let code = this.source;
       for (const [transformer, config] of transformers) {
         // TODO(graph): somehewhere in here we need to check for "use client" / "use server"
@@ -95,47 +96,49 @@ export class Module {
           this.compilationError = transformationResult;
         } else {
           code = transformationResult.code;
-          if (this.subgraphId) {
-            const prevSubgraphFork = this.bundler.getSubgraphFork(this);
-            let currentPrimarySubgraphId;
-            if (transformationResult.isSubgraphFork) {
-              // we're in this subgraph, but the module also lives in the other subgraph.
-              // TODO(graphs): VERY hardcoded
-              const otherGraphMap = { [SUBGRAPHS.client]: SUBGRAPHS.server, [SUBGRAPHS.server]: SUBGRAPHS.client };
-              const otherSubgraphId = otherGraphMap[this.subgraphId];
-              const resourcePath = this.filepath;
-              const otherId = toSubGraphPath(resourcePath, otherSubgraphId);
 
-              currentPrimarySubgraphId = otherSubgraphId;
-              debug(
-                `Module::compile() :: found subgraph fork from ${this.subgraphId} to ${otherSubgraphId}, issuing transformModule for`,
-                otherId
-              );
-              this.bundler.setSubgraphFork(this, { from: this.subgraphId!, to: currentPrimarySubgraphId });
-              void this.bundler.transformModule(otherId);
-            } else {
-              currentPrimarySubgraphId = this.subgraphId;
-              debug(
-                `Module::compile(${this.id}) :: not a fork, setting primary subgraph to ${currentPrimarySubgraphId}`
-              );
-              // this is not a subgraph for. clear any possible previous fork status this might've had.
-              this.bundler.setSubgraphFork(this, undefined);
-            }
-
-            if (prevSubgraphFork !== undefined) {
-              const prevPrimarySubgraphId = prevSubgraphFork.to;
-              // TODO(graphs): do we need to manually invalidate here? the react-refresh extension already does that,
-              // but maybe we need a generic method too? not sure, because OTOH this'd probably mess with react-refresh
-              //
-              // const previousModule = this.bundler.getModule(toSubGraphPath(this.filepath, prevPrimarySubgraphId));
-              // if (previousModule && previousModule.isHot()) {
-              //   previousModule.hot.invalidate();
-              // }
-              debug(
-                `Module::compile() :: primary subgraph for ${this.filepath} changed from ${prevPrimarySubgraphId} to ${currentPrimarySubgraphId}`
-              );
+          if (!markedAsSubgraphFork) {
+            if (this.subgraphId) {
+              const exisitingSubgraphFork = this.bundler.getSubgraphFork(this);
+              if (transformationResult.isSubgraphFork) {
+                // we're in one subgraph, but the module also lives in the other.
+                const other = this.bundler.getModuleConterpartInfo(this)!;
+                debug(
+                  `Module::compile("${this.id}") :: found subgraph fork from ${this.subgraphId} to ${other.subgraphId}, issuing transformModule for`,
+                  other.moduleId
+                );
+                this.bundler.setSubgraphFork(this, {
+                  source: {
+                    subgraphId: this.subgraphId!,
+                    moduleId: this.id,
+                  },
+                  target: other,
+                });
+                markedAsSubgraphFork = true;
+                void this.bundler.transformModule(other.moduleId);
+              } else {
+                if (exisitingSubgraphFork) {
+                  // are we the target of a fork?
+                  if (exisitingSubgraphFork.target.moduleId === this.id) {
+                    // if so, do nothing, the source module will update the status accordingly
+                    // if it changes.
+                  } else {
+                    // this is not a subgraph fork, or a target of one.
+                    // clear any possible previous fork status this might've had.
+                    if (!this.filepath.includes('/node_modules/')) {
+                      debug(
+                        `Module::compile("${this.id}") :: not a fork, unsetting (current: ${
+                          this.subgraphId
+                        }, previous: ${JSON.stringify(exisitingSubgraphFork)})`
+                      );
+                    }
+                    this.bundler.setSubgraphFork(this, undefined);
+                  }
+                }
+              }
             }
           }
+
           await Promise.all(
             Array.from(transformationResult.dependencies).map((d) => {
               return this.addDependency(d);
