@@ -195,7 +195,6 @@ export class Module {
     debug(`%cModule.evaluate() :: starting new evaluation (hot: ${this.isHot()})`, 'color: tomato', this.id);
 
     if (this.hot.hmrConfig) {
-      debugger;
       // this.bundler.setHmrStatus('dispose');
       // Call module.hot.dispose handler
       // https://webpack.js.org/api/hot-module-replacement/#dispose-or-adddisposehandler-
