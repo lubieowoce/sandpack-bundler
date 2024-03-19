@@ -4,7 +4,7 @@ import * as babel from '@babel/standalone';
 import * as logger from '../../../utils/logger';
 import { once } from '../../../utils/once';
 import { WorkerMessageBus } from '../../../utils/WorkerMessageBus';
-import { SUBGRAPHS, SubgraphId } from '../../subgraphs';
+import { SubgraphId } from '../../subgraphs';
 import { ITranspilationResult } from '../Transformer';
 import { loadPlugin, loadPreset } from './babel-plugin-registry';
 import { collectDependencies } from './dep-collector';
@@ -104,8 +104,6 @@ async function transform({ code, filepath, subgraphId, config }: ITransformData)
   const presets = await getPresets(config?.presets ?? []);
   const plugins = await getPlugins(config?.plugins ?? []);
 
-  // TODO(graphs): check for "use client" / "use server" here, and notify the bundler that this is a subgraph fork
-  // so that it can process the module in the other subgraph too?
   plugins.push(collectDependencies(requires));
 
   let isModuleFork = false;

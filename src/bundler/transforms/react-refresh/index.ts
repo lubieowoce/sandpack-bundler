@@ -1,13 +1,14 @@
-import * as logger from '../../../utils/logger';
 import { Bundler } from '../../bundler';
 import { ITranspilationContext, ITranspilationResult, Transformer } from '../Transformer';
 
 const HELPER_PATH = '/node_modules/__csb_bust/refresh-helper.js';
 
+const isDebug = false;
+
 const HELPER_CODE = `
 const Refresh = require('react-refresh/runtime');
 
-const isDebug = false;
+const isDebug = ${isDebug};
 const debug = isDebug ? console.debug.bind(console) : undefined;
 
 function debounce(func, wait, immediate) {
@@ -34,27 +35,39 @@ const enqueueUpdate = debounce(() => {
   }
 }, 30);
 
+const createdServerReferences = new WeakSet();
+globalThis.$Refresh$createdServerReferences = createdServerReferences;
 
 const CLIENT_REFERENCE_TYPE = Symbol.for('react.client.reference');
+const SERVER_REFERENCE_TYPE = Symbol.for('react.server.reference');
+
+function isReference(value) {
+  return isClientReference(value) || isServerReference(value) || (typeof value === 'function' && createdServerReferences.has(value));
+}
 
 function isClientReference(value) {
   return (typeof value === 'function') && value.$$typeof === CLIENT_REFERENCE_TYPE;
 }
 
+function isServerReference(value) {
+  return (typeof value === 'function') && value.$$typeof === SERVER_REFERENCE_TYPE;
+}
+
 function isLikelyComponentType(exportValue) {
   if (isClientReference(exportValue)) return true;
+  if (isServerReference(exportValue)) return true; // TODO(actions): are we sure about this...?
   return Refresh.isLikelyComponentType(exportValue);
 }
 
 // client references don't play well with 'Refresh.isLikelyComponentType' and 'canPreserveStateBetween',
 // so replace them with wrappers that are a bit more lenient
-const clientReferenceProxyFns = new Map();
+const referenceProxyReplacements = new Map();
 function getSafeRegisterValue(value) {
-  if (!isClientReference(value)) {
+  if (!isReference(value)) {
     return value
   };
   const key = value.$$id;
-  let existing = clientReferenceProxyFns.get(key);
+  let existing = referenceProxyReplacements.get(key);
   const [, name = ''] = key.split('#', 2);
   if (!existing) {
     // 'Refresh.isLikelyComponentType' checks the prototype to see if it's a class,
@@ -66,7 +79,7 @@ function getSafeRegisterValue(value) {
         return target[key]
       }
     });
-    clientReferenceProxyFns.set(key, existing);
+    referenceProxyReplacements.set(key, existing);
     // debug?.('csb-react-refresh-runtime :: created safe wrapper for client reference', key, existing)
   }
   return existing;
@@ -168,7 +181,7 @@ var registerExportsForReactRefresh = (moduleExports, moduleID) => {
   }
 };
 
-const refreshableServerComponentsImpls = new Map();
+const refreshableServerImpls = new Map();
 
 function addRefreshableServerExport(module, type, { localId, globalId }) {
   if (module.subgraphId !== 'server') return;
@@ -177,7 +190,6 @@ function addRefreshableServerExport(module, type, { localId, globalId }) {
   }
   module.refreshableExports.set(type, { localId, globalId });
 }
-
 
 function replaceServerExportsWithRefreshableWrappers(module) {
   if (!module.refreshableExports) return;
@@ -189,13 +201,13 @@ function replaceServerExportsWithRefreshableWrappers(module) {
     if (maybeRefreshableInfo) {
       const {globalId, localId} = maybeRefreshableInfo;
       const latestImpl = exportValue;
-      const previousImpl = refreshableServerComponentsImpls.get(globalId);
-      const isAClientReference = isClientReference(latestImpl);
+      const previousImpl = refreshableServerImpls.get(globalId);
+      const isAReference = isReference(latestImpl);
       let newExportValue;
 
       if (previousImpl !== undefined) {
-        const wasAClientReference = isClientReference(previousImpl);
-        if (isAClientReference !== wasAClientReference) {
+        const wasAReference = isReference(previousImpl);
+        if (isAReference !== wasAReference) {
           // module changed from client to server or vice versa, we have to invalidate it.
           if (module.hot) {
             // TODO(graphs): is this correct?
@@ -211,11 +223,11 @@ function replaceServerExportsWithRefreshableWrappers(module) {
       }
 
 
-      if (isAClientReference) {
+      if (isAReference) {
         // we cannot wrap client references in any useful way, so just reuse the previous one instead.
         if (!previousImpl) {
           const wrapped = getSafeRegisterValue(latestImpl);
-          refreshableServerComponentsImpls.set(globalId, wrapped);
+          refreshableServerImpls.set(globalId, wrapped);
           newExportValue = wrapped;
         } else {
           newExportValue = previousImpl;
@@ -227,10 +239,10 @@ function replaceServerExportsWithRefreshableWrappers(module) {
         } else {
           latestImpl.$$generation = previousImpl.$$generation + 1;
         }
-        refreshableServerComponentsImpls.set(globalId, latestImpl);
+        refreshableServerImpls.set(globalId, latestImpl);
         newExportValue = renameFunction(
           function (...args) {
-            const latestImpl = refreshableServerComponentsImpls.get(globalId);
+            const latestImpl = refreshableServerImpls.get(globalId);
             if (new.target) {
               return new latestImpl(...args);
             }
@@ -299,6 +311,7 @@ function postlude(module) {
         wasBoundary: isReactRefreshBoundary(prevExports),
       });
     }
+    debug?.('csb-refresh-runtime :: module hot:', module.id, module.hot.hmrConfig?.isHot() ?? false)
   }
 }
 

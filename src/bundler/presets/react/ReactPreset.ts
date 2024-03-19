@@ -8,8 +8,36 @@ import { MockFSTransformer } from '../../transforms/mock-fs';
 import { ReactRefreshTransformer } from '../../transforms/react-refresh';
 import { StyleTransformer } from '../../transforms/style';
 import { Preset } from '../Preset';
+import type { PluginOptions as ReactClientUseServerPluginOptions } from './react-client-use-server';
 
-type ReactPresetOpts = { type: 'server' | 'client'; fs?: boolean };
+type ReactPresetOpts = {
+  type: 'server' | 'client';
+  fs?: boolean;
+  serverActions?: { transformOptions: ServerActionsPluginOpts };
+};
+
+type ServerActionsPluginOpts = {
+  encryption?: {
+    importSource: string;
+    encryptFn: string;
+    decryptFn: string;
+  } | null;
+  runtime?: {
+    callServer?: {
+      importSource: string;
+      name: string;
+    };
+    createServerReference?: {
+      importSource: string;
+      name: string;
+    };
+    registerServerReference?: {
+      importSource: string;
+      name: string;
+    };
+  };
+};
+
 const DEFAULT_OPTS: ReactPresetOpts = { type: 'client' };
 
 export class ReactPreset extends Preset {
@@ -56,7 +84,8 @@ export class ReactPreset extends Preset {
   }
 
   mapTransformers(module: Module): Array<[string, any]> {
-    const isServer = module.subgraphId === 'server';
+    const isRscServer = module.subgraphId === 'server';
+    const isRscClient = module.subgraphId === 'client';
 
     if (/^(?!\/node_modules\/).*\.(((m|c)?jsx?)|tsx)$/.test(module.filepath)) {
       type ConfigEntry = [string, any];
@@ -73,7 +102,31 @@ export class ReactPreset extends Preset {
                 },
               ],
             ],
-            plugins: isServer ? [['react-server-use-client', {}] as ConfigEntry, reactRefresh] : [reactRefresh],
+            plugins: isRscServer
+              ? [
+                  ['react-server-use-client', { encryption: null }] as ConfigEntry,
+                  [
+                    '@owoce/babel-rsc/plugin-use-server',
+                    {
+                      moduleIds: 'file-url-absolute',
+                      encryption: null,
+                      ...this.opts.serverActions?.transformOptions,
+                    },
+                  ] as ConfigEntry,
+                  reactRefresh,
+                  ['react-server-refresh-actions', {}] as ConfigEntry,
+                ]
+              : isRscClient
+              ? [
+                  [
+                    'react-client-use-server',
+                    {
+                      ...this.opts.serverActions?.transformOptions,
+                    } as ReactClientUseServerPluginOptions,
+                  ] as ConfigEntry,
+                  reactRefresh,
+                ]
+              : [reactRefresh],
           },
         ],
         ['react-refresh-transformer', {}] as ConfigEntry,

@@ -30,8 +30,26 @@ const BABEL_PLUGIN_LOADERS: Map<string, LoaderFn> = new Map([
   [
     'react-server-use-client',
     () => {
-      // @ts-ignore
       return import('../../presets/react/react-server-use-client');
+    },
+  ],
+  [
+    '@owoce/babel-rsc/plugin-use-server',
+    () => {
+      // return import('@owoce/babel-rsc/plugin-use-server'); // TODO(actions): something weird going on with the exports here...
+      return import('@owoce/babel-rsc/dist/plugin-use-server.js');
+    },
+  ],
+  [
+    'react-server-refresh-actions',
+    () => {
+      return import('../../presets/react/react-server-refresh-actions');
+    },
+  ],
+  [
+    'react-client-use-server',
+    () => {
+      return import('../../presets/react/react-client-use-server');
     },
   ],
 ]);
