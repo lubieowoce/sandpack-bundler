@@ -11,6 +11,7 @@
 import { settle } from 'settle-promise';
 
 import { Bundler } from '../bundler/bundler';
+import { parseSubgraphPath } from '../bundler/subgraphs';
 import { getLinesAround } from './get-lines-around';
 import { SourceMap, getSourceMap } from './get-source-map';
 import StackFrame from './stack-frame';
@@ -41,7 +42,18 @@ async function map(bundler: Bundler, frames: StackFrame[], contextLines: number 
     Array.from(fileNames).map(async (fileName) => {
       if (!fileName.startsWith('webpack')) {
         const parsedUrl = new URL(fileName, location.origin);
-        const resolvedFilepath = await bundler.resolveAsync(parsedUrl.pathname, '/index.js');
+
+        let path = parsedUrl.pathname;
+        if (bundler.hasSubgraphs) {
+          // "/(client)/..." won't resolve, we need to strip the prefix
+          if (path.startsWith('/(')) {
+            const parsed = parseSubgraphPath(path.slice(1), false);
+            if (parsed && parsed.resourcePath !== path) {
+              path = parsed.resourcePath;
+            }
+          }
+        }
+        const resolvedFilepath = await bundler.resolveAsync(path, '/index.js');
         const foundModule = bundler.getModule(resolvedFilepath);
 
         if (foundModule) {
