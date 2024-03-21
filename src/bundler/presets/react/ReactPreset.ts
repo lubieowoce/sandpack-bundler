@@ -8,12 +8,14 @@ import { MockFSTransformer } from '../../transforms/mock-fs';
 import { ReactRefreshTransformer } from '../../transforms/react-refresh';
 import { StyleTransformer } from '../../transforms/style';
 import { Preset } from '../Preset';
+import type { PluginOptions as ReactApiUsagePluginOptions } from './react-api-usage';
 import type { PluginOptions as ReactClientUseServerPluginOptions } from './react-client-use-server';
 
 type ReactPresetOpts = {
   type: 'server' | 'client';
   fs?: boolean;
   serverActions?: { transformOptions: ServerActionsPluginOpts };
+  apiUsage?: ReactApiUsagePluginOptions;
 };
 
 type ServerActionsPluginOpts = {
@@ -104,6 +106,7 @@ export class ReactPreset extends Preset {
             ],
             plugins: isRscServer
               ? [
+                  ['react-api-usage', this.opts.apiUsage ?? {}], // TODO(analyzer): disable if info not passed? add defaults?
                   ['react-server-use-client', { encryption: null }] as ConfigEntry,
                   [
                     '@owoce/babel-rsc/plugin-use-server',
@@ -118,6 +121,7 @@ export class ReactPreset extends Preset {
                 ]
               : isRscClient
               ? [
+                  ['react-api-usage', this.opts.apiUsage ?? {}],
                   [
                     'react-client-use-server',
                     {

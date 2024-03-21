@@ -52,6 +52,12 @@ const BABEL_PLUGIN_LOADERS: Map<string, LoaderFn> = new Map([
       return import('../../presets/react/react-client-use-server');
     },
   ],
+  [
+    'react-api-usage',
+    () => {
+      return import('../../presets/react/react-api-usage');
+    },
+  ],
 ]);
 
 function load(key: string, loader: LoaderFn): Promise<any> {
