@@ -35,14 +35,20 @@ const enqueueUpdate = debounce(() => {
   }
 }, 30);
 
-const createdServerReferences = new WeakSet();
+// TODO(actions): maybe use a WeakMap/Map instead and key them by action id,
+// that way we won't leak memory if the Weak* version is not available?
+const createdServerReferences = typeof WeakSet !== 'undefined' ? new WeakSet() : new Set();
 globalThis.$Refresh$createdServerReferences = createdServerReferences;
 
 const CLIENT_REFERENCE_TYPE = Symbol.for('react.client.reference');
 const SERVER_REFERENCE_TYPE = Symbol.for('react.server.reference');
 
 function isReference(value) {
-  return isClientReference(value) || isServerReference(value) || (typeof value === 'function' && createdServerReferences.has(value));
+  return (
+    isClientReference(value)
+      || isServerReference(value)
+      || (typeof value === 'function' && createdServerReferences.has(value)) // TODO(actions): do we actually need this?
+  );
 }
 
 function isClientReference(value) {
