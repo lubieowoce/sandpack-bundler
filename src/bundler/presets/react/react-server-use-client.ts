@@ -156,16 +156,14 @@ const plugin = (api: BabelAPI, _dirname: string): PluginObj<{}> => {
       }
       const code = generatedCode.join('\n');
 
-      const ast = template(code)({}) as t.Statement[];
+      const ast = template.statements.ast(code);
 
       if (process.env.NODE_ENV === 'development') {
         // eslint-disable-next-line no-console
         console.log('react-server-use-client ::', generatedCode);
       }
 
-      const [newPath] = file.path.replaceWith(
-        t.program(ast as Parameters<(typeof t)['program']>[0], undefined, 'module')
-      );
+      const [newPath] = file.path.replaceWith(t.program(ast, undefined, 'module'));
 
       newPath.node.extra ??= {};
       newPath.node.extra['sandpack-bundler.is-module-fork'] = true;
