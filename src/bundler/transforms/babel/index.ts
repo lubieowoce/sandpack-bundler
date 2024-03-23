@@ -1,8 +1,9 @@
 import { CompilationError } from '../../../errors/CompilationError';
 import * as logger from '../../../utils/logger';
 import { WorkerMessageBus } from '../../../utils/WorkerMessageBus';
+import type { Bundler } from '../../bundler';
 import { ITranspilationContext, ITranspilationResult, Transformer } from '../Transformer';
-import { ITransformData } from './babel-worker';
+import type { ITransformData } from './babel-worker';
 
 export class BabelTransformer extends Transformer {
   private worker: null | Worker = null;
@@ -12,10 +13,11 @@ export class BabelTransformer extends Transformer {
     super('babel-transformer');
   }
 
-  async init() {
+  async init(bundler: Bundler) {
     this.worker = new Worker(new URL('./babel-worker', import.meta.url), {
       type: 'module',
     });
+    bundler.markAsSharedModule('core-js'); // for babel-preset-env, added in babel-worker's getPresets()
 
     this.messageBus = new WorkerMessageBus({
       channel: 'sandpack-babel',

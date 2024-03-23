@@ -3,9 +3,9 @@ import * as logger from '../../utils/logger';
 import { sortObj } from '../../utils/object';
 import { Bundler } from '../bundler';
 import { Module } from '../module/Module';
-import { NO_SUBGRAPH } from '../subgraphs';
+import { NO_SUBGRAPH, SubgraphId } from '../subgraphs';
 import { filterBuildDeps } from './build-dep';
-import { ICDNModuleFile, IResolvedDependency, fetchManifest, fetchModule } from './module-cdn';
+import { CDNModuleFileType, ICDNModuleFile, IResolvedDependency, fetchManifest, fetchModule } from './module-cdn';
 import { NodeModule } from './NodeModule';
 
 // dependency => version range
@@ -68,28 +68,49 @@ export class ModuleRegistry {
     return promise;
   }
 
-  private _writePrecompiledModule(path: string, file: ICDNModuleFile): Array<() => Promise<void>> {
+  getPath(
+    path: string
+  ): null | { nodeModule: NodeModule; file: { path: string; cdn: CDNModuleFileType; contents: string | null } | null } {
+    if (!path.startsWith('/node_modules/')) return null;
+    const parsed = parseNodeModulePath(path);
+    if (!parsed) return null;
+    const [name, relativePath] = parsed;
+    const nodeModule = this.modules.get(name);
+    if (!nodeModule) return null;
+    const maybeFile = nodeModule.files[relativePath] ?? null;
+    return {
+      nodeModule: nodeModule,
+      file:
+        maybeFile === null
+          ? null
+          : {
+              cdn: maybeFile,
+              path: relativePath,
+              contents: typeof maybeFile === 'object' ? maybeFile.c : null,
+            },
+    };
+  }
+
+  private _addPrecompiledNodeModuleToModuleGraph(path: string, file: ICDNModuleFile): Array<() => Promise<void>> {
     if (this.bundler.modules.has(path)) {
       return [];
     }
 
-    const module = new Module(path, path, file.c, true, this.bundler, NO_SUBGRAPH);
+    const { c: content, d: dependencySpecifiers, t: isTranspiled } = file;
+    const moduleId = path;
+    const module = new Module(moduleId, path, content, isTranspiled, this.bundler, NO_SUBGRAPH);
     this.bundler.modules.set(path, module);
-    this.bundler.sharedModules.add(path);
-    return file.d.map((dep) => {
-      return async () => {
-        await module.addDependency(dep);
+    this.bundler.markAsSharedModule(path);
 
-        // TODO: is this in the right place...?
-        // we do we need to execute this for every file in file.d?
-        for (let dep of module.dependencies) {
-          this.bundler.transformModule(dep);
-        }
+    return dependencySpecifiers.map((dep) => {
+      return async () => {
+        const depModuleId = await module.addDependency(dep);
+        void this.bundler.transformModule(depModuleId);
       };
     });
   }
 
-  async loadModuleDependencies(only?: string[]) {
+  async addNodeModulesToModuleGraph(only?: string[]) {
     function catchNotFound<T>(promise: Promise<T>): Promise<T | null> {
       return promise.catch((err) => {
         // `loadModuleDependencies` tries to eagerly transform every file in every dependency.
@@ -107,19 +128,56 @@ export class ModuleRegistry {
     const depPromises = [];
     const modulesToLoad = only
       ? only
-          .filter((moduleName) => this.modules.has(moduleName))
+          .filter((moduleName) => {
+            if (this.modules.has(moduleName)) {
+              return true;
+            }
+            // this may be a /node_modules/ path too.
+            const parsed = parseNodeModulePath(moduleName);
+            return !!(parsed && this.modules.has(parsed[0]));
+          })
           .map((moduleName) => [moduleName, this.modules.get(moduleName)!] as const)
       : this.modules.entries();
+
     for (let [moduleName, nodeModule] of modulesToLoad) {
       for (let [fileName, file] of Object.entries(nodeModule.files)) {
         if (typeof file === 'object') {
-          const promises = this._writePrecompiledModule(`/node_modules/${moduleName}/${fileName}`, file).map(
-            (cb) => () => catchNotFound(cb())
-          );
+          const promises = this._addPrecompiledNodeModuleToModuleGraph(
+            `/node_modules/${moduleName}/${fileName}`,
+            file
+          ).map((cb) => () => catchNotFound(cb()));
           depPromises.push(...promises);
         }
       }
     }
     await Promise.all(depPromises.map((fn) => fn()));
   }
+}
+
+const MODULE_PATH_RE = /^\/node_modules\/(@[^/]+\/[^/]+|[^@/]+)(.*)$/;
+
+const parsedNodeModulePathCache = new Map<string, ParsedNodeModulePath>();
+
+type ParsedNodeModulePath = [string, string] | null;
+
+/** Turns a path into [moduleName, relativePath] */
+export function parseNodeModulePath(path: string): [string, string] | null {
+  const cached = parsedNodeModulePathCache.get(path);
+  if (cached) return cached;
+
+  let result: ParsedNodeModulePath;
+  const parts = path.match(MODULE_PATH_RE);
+  if (!parts) {
+    result = null;
+  } else {
+    const moduleName = parts[1];
+    const modulePath: string = parts[2] ?? '';
+    return [moduleName, modulePath.substring(1)];
+  }
+  parsedNodeModulePathCache.set(path, result);
+  return result;
+}
+
+export function isPackageName(specifier: string): boolean {
+  return parseNodeModulePath('/node_modules/' + specifier) !== null;
 }

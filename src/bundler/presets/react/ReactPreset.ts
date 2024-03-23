@@ -58,7 +58,7 @@ export class ReactPreset extends Preset {
     if (this.isServer) {
       bundler.setSubgraphImportConditions({
         [SUBGRAPHS.client]: ['...'],
-        [SUBGRAPHS.server]: ['react-server', '...'], // TODO(graph): make this customizable by presets, a la `setResolveOptions`
+        [SUBGRAPHS.server]: ['react-server', '...'],
       });
     }
 

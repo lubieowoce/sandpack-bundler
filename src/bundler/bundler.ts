@@ -5,14 +5,14 @@ import { MemoryFSLayer } from '../FileSystem/layers/MemoryFSLayer';
 import { NodeModuleFSLayer } from '../FileSystem/layers/NodeModuleFSLayer';
 import { IFrameParentMessageBus } from '../protocol/iframe';
 import { BundlerStatus } from '../protocol/message-types';
-import { IResolveOptionsInput, ResolverCache, resolveAsync } from '../resolver/resolver';
+import { ResolverCache, resolveAsync } from '../resolver/resolver';
 import { IPackageJSON, ISandboxFile } from '../types';
 import { Emitter } from '../utils/emitter';
 import { replaceHTML } from '../utils/html';
 import * as logger from '../utils/logger';
 import { NamedPromiseQueue } from '../utils/NamedPromiseQueue';
 import { nullthrows } from '../utils/nullthrows';
-import { ModuleRegistry } from './module-registry';
+import { ModuleRegistry, isPackageName, parseNodeModulePath } from './module-registry';
 import { EvaluationResetError, Module } from './module/Module';
 import { Preset } from './presets/Preset';
 import { PresetInput, getPreset } from './presets/registry';
@@ -53,7 +53,8 @@ export class Bundler {
   isFirstLoad = true;
   preset: Preset | undefined;
 
-  sharedModules = new Set<string>();
+  sharedPackages = new Set<string>();
+  sharedModulePaths = new Set<string>();
   subgraphImportConditions: SubgraphImportConditions = undefined;
   isResourceSubgraphFork = new Map<string, SubgraphForkInfo>();
 
@@ -71,11 +72,11 @@ export class Bundler {
     this.transformationQueue = new NamedPromiseQueue(true, 50);
     this.moduleRegistry = new ModuleRegistry(this);
     const memoryFS = new MemoryFSLayer();
-    memoryFS.writeFile('//empty.js', 'module.exports = () => {};');
-    this.sharedModules.add('//empty.js');
     this.iFrameFsLayer = new IFrameFSLayer(memoryFS, options.messageBus);
     this.fs = new FileSystem([memoryFS, this.iFrameFsLayer, new NodeModuleFSLayer(this.moduleRegistry)]);
     this.messageBus = options.messageBus;
+    memoryFS.writeFile('//empty.js', 'module.exports = () => {};');
+    this.markAsSharedModule('//empty.js');
   }
 
   /** Reset all compilation data */
@@ -100,10 +101,10 @@ export class Bundler {
 
   registerRuntime(id: string, code: string): void {
     const filepath = `/node_modules/__csb_runtimes/${id}.js`;
-    this.sharedModules.add(filepath);
     this.fs.writeFile(filepath, code);
+    this.markAsSharedModule(filepath);
     const module = new Module(
-      filepath, // TODO(graph): do we need per-graph runtimes?
+      filepath, // TODO(graphs): do we need per-graph runtimes?
       filepath,
       code,
       false,
@@ -199,13 +200,16 @@ export class Bundler {
 
       // Load all modules
       await this.moduleRegistry.preloadModules();
+      logger.debug('moduleRegistry.modules', this.moduleRegistry.modules);
 
-      // weird things happen with `useBuiltins: "usage" if 'core-js' isn't loaded here,
-      // but we don't want to eagerly load anything else
-      // or do we?
-      // TODO: make up our minds here!
-      await this.moduleRegistry.loadModuleDependencies(['core-js']);
-      // await this.moduleRegistry.loadModuleDependencies();
+      if (this.hasSubgraphs()) {
+        // if we have subgraphs, dependencies might get resolved differently depending on subgraph import conditions,
+        // so we can't add anything other than shared modules here.
+        logger.debug('adding shared node modules to subgraph', [...this.sharedPackages]);
+        await this.moduleRegistry.addNodeModulesToModuleGraph([...this.sharedPackages]);
+      } else {
+        await this.moduleRegistry.addNodeModulesToModuleGraph();
+      }
     }
   }
 
@@ -216,6 +220,9 @@ export class Bundler {
   ): Promise<string> {
     try {
       const { resourcePath: specifier } = parseSubgraphPath(rawSpecifier, false);
+      if (this.sharedPackages.has(rawSpecifier)) {
+        subgraphId = NO_SUBGRAPH;
+      }
       const resolved = await resolveAsync(specifier, {
         filename,
         extensions: extensions ?? RESOLVE_EXTENSIONS_DEFAULT,
@@ -224,7 +231,8 @@ export class Bundler {
         readFile: this.fs.readFile,
         resolverCache: this.resolverCache,
       });
-      if (this.sharedModules.has(resolved)) {
+
+      if (this.sharedModulePaths.has(resolved)) {
         return resolved;
       } else {
         return toSubGraphPath(resolved, subgraphId);
@@ -242,6 +250,7 @@ export class Bundler {
   private async _transformModule(id: string): Promise<Module> {
     let module = this.modules.get(id);
     const { resourcePath, subgraphId } = parseSubgraphPath(id, false);
+
     if (module) {
       if (module.compiled != null) {
         return Promise.resolve(module);
@@ -252,16 +261,42 @@ export class Bundler {
       }
     } else {
       logger.debug('Module._transformModule :: creating fresh module', id);
-      const content = await this.fs.readFileAsync(resourcePath);
-      module = new Module(id, resourcePath, content, false, this, subgraphId);
+      const maybeNodeModule = await this._tryCreatePrecompiledModule(id);
+      if (maybeNodeModule) {
+        module = maybeNodeModule;
+      } else {
+        const content = await this.fs.readFileAsync(resourcePath);
+        module = new Module(id, resourcePath, content, false, this, subgraphId);
+      }
       this.modules.set(id, module);
     }
     await module.compile();
     for (let dep of module.dependencies) {
       const resolvedDependency = await this.resolveAsync(dep, module.filepath, { subgraphId });
-      this.transformModule(resolvedDependency);
+      void this.transformModule(resolvedDependency);
     }
     return module;
+  }
+
+  private async _tryCreatePrecompiledModule(id: string) {
+    const { resourcePath, subgraphId } = parseSubgraphPath(id, false);
+    const fromNodeModules = this.moduleRegistry.getPath(resourcePath);
+    if (fromNodeModules && fromNodeModules.file && typeof fromNodeModules.file.cdn === 'object') {
+      logger.debug('Bundler._tryCreatePrecompiledModule :: Lazily created module for CDN file', resourcePath);
+      // TODO(dependencies): there's some duplication (with subtle differences) with `_addPrecompiledNodeModuleToModuleGraph`.
+      // can we deduplicate them without making things too messy?
+      const { c: content, d: dependencySpecifiers, t: isTranspiled } = fromNodeModules.file.cdn;
+      const nodeNodule = new Module(id, resourcePath, content, isTranspiled, this, subgraphId);
+      await Promise.all(
+        dependencySpecifiers.map(async (depSpecifier) => {
+          const resolved = await nodeNodule.addDependency(depSpecifier);
+          // transform dependencies eagerly, otherwise we get "asset not found in compilation" for dependencies
+          await this.transformModule(resolved);
+        })
+      );
+      return nodeNodule;
+    }
+    return null;
   }
 
   /** Transform file at a certain absolute path */
@@ -329,6 +364,29 @@ export class Bundler {
       this.fs.writeFile(file.path, file.code);
     }
     return res;
+  }
+
+  markAsSharedModule(specifier: string) {
+    if (!this.hasSubgraphs()) {
+      // if there's no subgraphs, all modules are shared.
+      return;
+    }
+    if (specifier.startsWith('/')) {
+      if (this.sharedModulePaths.has(specifier)) return;
+      const parsed = parseSubgraphPath(specifier, false);
+      if (parsed.subgraphId !== NO_SUBGRAPH) {
+        throw new Error(`Unexpected subgraph path, expected an absolute resource path`);
+      }
+      this.sharedModulePaths.add(specifier);
+    } else {
+      if (this.sharedPackages.has(specifier)) return;
+      const isPackage = isPackageName(specifier);
+      if (isPackage) {
+        this.sharedPackages.add(specifier);
+      } else {
+        throw new Error(`Cannot mark '${specifier}' as a shared module, expected either package name or absolute path`);
+      }
+    }
   }
 
   setSubgraphImportConditions(conditions: SubgraphImportConditions) {
@@ -474,7 +532,7 @@ export class Bundler {
 
       this._previousDepString = depString;
 
-      await this.loadNodeModules();
+      await this.loadNodeModules(); // TODO: does this need to be awaited here?
     }
 
     this.onStatusChangeEmitter.fire('transpiling');

@@ -2,8 +2,6 @@ import { ModuleRegistry } from '../../bundler/module-registry';
 import { retryFetch } from '../../utils/fetch';
 import { FSLayer } from '../FSLayer';
 
-const MODULE_PATH_RE = /^\/node_modules\/(@[^/]+\/[^/]+|[^@/]+)(.*)$/;
-
 function getUnpkgSpecifier(moduleName: string, moduleVersion: string, path: string): string {
   return `${moduleName}@${moduleVersion}/${path}`;
 }
@@ -51,27 +49,15 @@ export class NodeModuleFSLayer extends FSLayer {
     throw new Error(`File not found in unpkg cache: ${moduleName}@${moduleVersion} - ${path}`);
   }
 
-  /** Turns a path into [moduleName, relativePath] */
-  private getModuleFromPath(path: string): [string, string] {
-    const parts = path.match(MODULE_PATH_RE);
-    if (!parts) {
-      throw new Error(`Path is not a node_module: ${path}`);
-    }
-    const moduleName = parts[1];
-    const modulePath: string = parts[2] ?? '';
-    return [moduleName, modulePath.substring(1)];
-  }
-
   readFileSync(path: string): string {
-    const [moduleName, modulePath] = this.getModuleFromPath(path);
-    const module = this.registry.modules.get(moduleName);
-    if (module) {
-      const foundFile = module.files[modulePath];
-      if (foundFile) {
-        if (typeof foundFile === 'object') {
-          return foundFile.c;
+    const found = this.registry.getPath(path);
+    if (found) {
+      const { nodeModule: module, file } = found;
+      if (file) {
+        if (file.contents !== null) {
+          return file.contents;
         } else {
-          return this.getUnpkgFile(moduleName, module.version, modulePath);
+          return this.getUnpkgFile(module.name, module.version, file.path);
         }
       }
     }
@@ -79,16 +65,15 @@ export class NodeModuleFSLayer extends FSLayer {
   }
 
   async readFileAsync(path: string): Promise<string> {
-    const [moduleName, modulePath] = this.getModuleFromPath(path);
-    const module = this.registry.modules.get(moduleName);
-    if (module) {
-      const foundFile = module.files[modulePath];
-      if (foundFile) {
-        if (typeof foundFile === 'object') {
-          return foundFile.c;
+    const found = this.registry.getPath(path);
+    if (found) {
+      const { nodeModule: module, file } = found;
+      if (file) {
+        if (file.contents !== null) {
+          return file.contents;
+        } else {
+          return this.fetchUnpkgFile(module.name, module.version, file.path);
         }
-
-        return this.fetchUnpkgFile(moduleName, module.version, modulePath);
       }
     }
     throw new Error(`Module ${path} not found`);
@@ -96,10 +81,9 @@ export class NodeModuleFSLayer extends FSLayer {
 
   isFileSync(path: string): boolean {
     try {
-      const [moduleName, modulePath] = this.getModuleFromPath(path);
-      const module = this.registry.modules.get(moduleName);
-      if (module) {
-        return module.files[modulePath] != null;
+      const found = this.registry.getPath(path);
+      if (found) {
+        return found.file != null;
       }
     } catch (err) {
       // do nothing...

@@ -55,11 +55,14 @@ export class Module {
   }
 
   /** Add dependency */
-  async addDependency(depSpecifier: string): Promise<void> {
-    const resolved = await this.bundler.resolveAsync(depSpecifier, this.filepath, { subgraphId: this.subgraphId });
+  async addDependency(depSpecifier: string): Promise<string> {
+    const resolved = await this.bundler.resolveAsync(depSpecifier, this.filepath, {
+      subgraphId: this.subgraphId,
+    });
     this.dependencies.add(resolved);
     this.dependencyMap.set(depSpecifier, resolved);
     this.bundler.addInitiator(resolved, this.id);
+    return resolved;
   }
 
   async compile(): Promise<void> {
@@ -80,10 +83,6 @@ export class Module {
       let markedAsSubgraphFork = false;
       let code = this.source;
       for (const [transformer, config] of transformers) {
-        // TODO(graph): somehewhere in here we need to check for "use client" / "use server"
-        // TODO(graph): when we encounter a graph fork, we need to emit two modules.
-        // but what do we set as the importer of the "client" module? maybe just the entrypoint?
-        // in reality, that'll be the place that does the __webpack_require__...
         const transformationResult = await transformer.transform(
           {
             module: this,

@@ -371,7 +371,8 @@ export class ReactRefreshTransformer extends Transformer {
     // Write helper to memory-fs
     if (!ctx.module.bundler.fs.isFileSync(HELPER_PATH)) {
       ctx.module.bundler.fs.writeFile(HELPER_PATH, HELPER_CODE);
-      ctx.module.bundler.sharedModules.add(HELPER_PATH);
+      ctx.module.bundler.markAsSharedModule(HELPER_PATH);
+      ctx.module.bundler.markAsSharedModule('react-refresh');
     }
 
     const newCode = getWrapperCode(ctx.code);
