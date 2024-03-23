@@ -365,14 +365,14 @@ export class ReactRefreshTransformer extends Transformer {
 
   async init(bundler: Bundler): Promise<void> {
     bundler.registerRuntime(this.id, REACT_REFRESH_RUNTIME);
+    bundler.markAsSharedModule(HELPER_PATH);
+    bundler.markAsSharedModule('react-refresh');
   }
 
   async transform(ctx: ITranspilationContext, config: any): Promise<ITranspilationResult> {
     // Write helper to memory-fs
     if (!ctx.module.bundler.fs.isFileSync(HELPER_PATH)) {
       ctx.module.bundler.fs.writeFile(HELPER_PATH, HELPER_CODE);
-      ctx.module.bundler.markAsSharedModule(HELPER_PATH);
-      ctx.module.bundler.markAsSharedModule('react-refresh');
     }
 
     const newCode = getWrapperCode(ctx.code);
