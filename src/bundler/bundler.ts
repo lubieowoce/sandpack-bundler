@@ -28,12 +28,14 @@ interface IFSOptions {
   hasAsyncFileResolver?: boolean;
 }
 
-type BaseResolveOptions = Partial<Pick<IResolveOptionsInput, 'conditionNames' | 'extensions'>>;
-
 type SubgraphForkInfo = {
   source: { subgraphId: SubgraphId; moduleId: string };
   target: { subgraphId: SubgraphId; moduleId: string };
 };
+
+type SubgraphImportConditions = Record<SubgraphId, string[]> | undefined;
+
+const RESOLVE_EXTENSIONS_DEFAULT = ['.js', '.jsx', '.mjs', '.cjs', '.ts', '.tsx'];
 
 export class Bundler {
   private lastHTML: string | null = null;
@@ -51,11 +53,8 @@ export class Bundler {
   isFirstLoad = true;
   preset: Preset | undefined;
 
-  baseResolveOptions: BaseResolveOptions | undefined;
-
-  hasSubgraphs = false;
   sharedModules = new Set<string>();
-  subgraphImportConditions: Record<SubgraphId, string[]> | undefined = undefined;
+  subgraphImportConditions: SubgraphImportConditions = undefined;
   isResourceSubgraphFork = new Map<string, SubgraphForkInfo>();
 
   // Map from module id => parent module ids
@@ -90,10 +89,6 @@ export class Bundler {
     if (opts.hasAsyncFileResolver) {
       this.iFrameFsLayer.enableIFrameFS();
     }
-  }
-
-  setResolveOptions(resolveOptions: BaseResolveOptions | undefined) {
-    this.baseResolveOptions = { ...this.baseResolveOptions, ...resolveOptions };
   }
 
   async initPreset(preset: PresetInput): Promise<void> {
@@ -214,8 +209,6 @@ export class Bundler {
     }
   }
 
-  RESOLVE_EXTENSIONS_DEFAULT = ['.js', '.jsx', '.mjs', '.cjs', '.ts', '.tsx'];
-
   async resolveAsync(
     rawSpecifier: string,
     filename: string,
@@ -225,10 +218,8 @@ export class Bundler {
       const { resourcePath: specifier } = parseSubgraphPath(rawSpecifier, false);
       const resolved = await resolveAsync(specifier, {
         filename,
-        extensions: extensions ?? this.baseResolveOptions?.extensions ?? this.RESOLVE_EXTENSIONS_DEFAULT,
-        conditionNames: subgraphId
-          ? this.subgraphImportConditions?.[subgraphId] ?? this.baseResolveOptions?.conditionNames
-          : this.baseResolveOptions?.conditionNames,
+        extensions: extensions ?? RESOLVE_EXTENSIONS_DEFAULT,
+        conditionNames: subgraphId ? this.subgraphImportConditions?.[subgraphId] : undefined,
         isFile: this.fs.isFile,
         readFile: this.fs.readFile,
         resolverCache: this.resolverCache,
@@ -340,8 +331,16 @@ export class Bundler {
     return res;
   }
 
+  setSubgraphImportConditions(conditions: SubgraphImportConditions) {
+    this.subgraphImportConditions = conditions;
+  }
+
+  hasSubgraphs() {
+    return !!this.subgraphImportConditions;
+  }
+
   getSubgraphs() {
-    if (!this.hasSubgraphs) return [NO_SUBGRAPH];
+    if (!this.hasSubgraphs()) return [NO_SUBGRAPH];
     return [SUBGRAPHS.server, SUBGRAPHS.client];
   }
 
@@ -356,7 +355,7 @@ export class Bundler {
     return { subgraphId: otherSubgraphId, moduleId: toSubGraphPath(resourcePath, otherSubgraphId) };
   }
 
-  getModuleConterpart(module: Module) {
+  getSubgraphConterpartForModule(module: Module) {
     const other = this.getModuleConterpartInfo(module);
     if (!other) {
       return undefined;
@@ -384,7 +383,7 @@ export class Bundler {
     // check if this module has a counterpart in the other subgraph.
     // if it does, it's a shared module
     // (we've already eliminated forks above)
-    const otherModule = this.getModuleConterpart(module);
+    const otherModule = this.getSubgraphConterpartForModule(module);
     if (otherModule) {
       const otherSubgraphId = otherModule.subgraphId;
       return [subgraphId, otherSubgraphId];

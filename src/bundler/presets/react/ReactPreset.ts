@@ -56,11 +56,10 @@ export class ReactPreset extends Preset {
   async init(bundler: Bundler): Promise<void> {
     await super.init(bundler);
     if (this.isServer) {
-      bundler.hasSubgraphs = true;
-      bundler.subgraphImportConditions = {
+      bundler.setSubgraphImportConditions({
         [SUBGRAPHS.client]: ['...'],
         [SUBGRAPHS.server]: ['react-server', '...'], // TODO(graph): make this customizable by presets, a la `setResolveOptions`
-      };
+      });
     }
 
     await Promise.all([
@@ -75,13 +74,13 @@ export class ReactPreset extends Preset {
   getCustomGlobals(module: Module) {
     const subgraphId = module.subgraphId;
     if (!subgraphId) return undefined;
-    const prefix = {
+    const prefixes = {
       [SUBGRAPHS.client]: 'REACT_CLIENT$',
       [SUBGRAPHS.server]: 'REACT_SERVER$',
     }[subgraphId];
     return {
-      __webpack_chunk_load__: (globalThis as any)[prefix + '__webpack_chunk_load__'],
-      __webpack_require__: (globalThis as any)[prefix + '__webpack_require__'],
+      __webpack_chunk_load__: (globalThis as any)[prefixes + '__webpack_chunk_load__'],
+      __webpack_require__: (globalThis as any)[prefixes + '__webpack_require__'],
     };
   }
 

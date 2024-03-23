@@ -44,7 +44,7 @@ async function map(bundler: Bundler, frames: StackFrame[], contextLines: number 
         const parsedUrl = new URL(fileName, location.origin);
 
         let path = parsedUrl.pathname;
-        if (bundler.hasSubgraphs) {
+        if (bundler.hasSubgraphs()) {
           // "/(client)/..." won't resolve, we need to strip the prefix
           if (path.startsWith('/(')) {
             const parsed = parseSubgraphPath(path.slice(1), false);
