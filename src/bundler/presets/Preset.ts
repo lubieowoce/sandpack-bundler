@@ -1,8 +1,9 @@
 import * as logger from '../../utils/logger';
 import { Bundler } from '../bundler';
 import { DepMap } from '../module-registry';
-import { Module } from '../module/Module';
-import { Transformer } from '../transforms/Transformer';
+import type { Evaluation } from '../module/Evaluation';
+import type { Module } from '../module/Module';
+import type { Transformer } from '../transforms/Transformer';
 
 export class Preset {
   private transformers = new Map<string, Transformer>();
@@ -35,7 +36,7 @@ export class Preset {
     throw new Error('Not implemented');
   }
 
-  getCustomGlobals(module: Module): Record<string, any> | undefined {
+  getCustomGlobals(evaluation: Evaluation): Record<string, any> | undefined {
     return undefined;
   }
 

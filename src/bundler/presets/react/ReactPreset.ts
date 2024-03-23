@@ -1,7 +1,8 @@
 import { Bundler } from '../../bundler';
 import { DepMap } from '../../module-registry';
+import { Evaluation } from '../../module/Evaluation';
 import { Module } from '../../module/Module';
-import { SUBGRAPHS } from '../../subgraphs';
+import { SUBGRAPHS, toSubGraphPath } from '../../subgraphs';
 import { BabelTransformer } from '../../transforms/babel';
 import { CSSTransformer } from '../../transforms/css';
 import { MockFSTransformer } from '../../transforms/mock-fs';
@@ -71,16 +72,56 @@ export class ReactPreset extends Preset {
     ]);
   }
 
-  getCustomGlobals(module: Module) {
-    const subgraphId = module.subgraphId;
-    if (!subgraphId) return undefined;
-    const prefixes = {
-      [SUBGRAPHS.client]: 'REACT_CLIENT$',
-      [SUBGRAPHS.server]: 'REACT_SERVER$',
-    }[subgraphId];
+  getCustomGlobals(evaluation: Evaluation) {
+    if (!this.isServer) {
+      return;
+    }
+    // we need to emulate __webpack_require__ and __webpack_chunk_load__ for 'react-server-dom-webpack'.
+    const bundler = evaluation.module.bundler;
+    const _require = evaluation.require.bind(evaluation);
+    const importer = evaluation.module;
+
+    const __webpack_chunk_load__ = async (chunkId: string) => {
+      const rawId = chunkId; // chunks don't exist, we expect this to be a module id
+      if (!bundler.fs.isFileSync(rawId)) {
+        throw new Error(`__webpack_chunk_load__ :: File not found ${rawId}`);
+      }
+      const id = toSubGraphPath(rawId, importer.subgraphId);
+      try {
+        await bundler.transformModule(id);
+        await bundler.moduleFinishedPromise(id);
+      } catch (err) {
+        throw new Error(
+          `__webpack_chunk_load__: Failed to load ${rawId}`,
+          // @ts-expect-error old lib.dom types
+          { cause: err }
+        );
+      }
+    };
+
+    const __webpack_require__ = (rawId: string) => {
+      const id = toSubGraphPath(rawId, importer.subgraphId);
+      // try returning exports synchronously. this is what RSDW expects here.
+
+      // add it to dependencies (but that happens asynchronously).
+      // use the raw id, that's what the resolver will expect.
+      void _require(rawId);
+      const module = bundler.getModule(id);
+      if (!module) {
+        throw new Error(`__webpack_require__: Module not found ${id}`);
+      }
+      const evaluation = module.evaluate();
+      return evaluation.getExports();
+    };
+
+    // get chunk name. in our case chunks don't exist, it's the same as the module name
+    __webpack_require__.u = (id: string) => {
+      return id;
+    };
+
     return {
-      __webpack_chunk_load__: (globalThis as any)[prefixes + '__webpack_chunk_load__'],
-      __webpack_require__: (globalThis as any)[prefixes + '__webpack_require__'],
+      __webpack_chunk_load__,
+      __webpack_require__,
     };
   }
 

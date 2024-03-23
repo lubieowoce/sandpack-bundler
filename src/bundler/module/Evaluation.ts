@@ -1,5 +1,5 @@
 import * as logger from '../../utils/logger';
-import { SUBGRAPHS, SubgraphId, getSubgraphFileUrl } from '../subgraphs';
+import { SUBGRAPHS, SubgraphId, getSubgraphFileUrl, toSubGraphPath } from '../subgraphs';
 import evaluate from './eval';
 import { HotContext } from './hot';
 import { Module } from './Module';
@@ -52,7 +52,7 @@ export class Evaluation {
         location.origin
       ).href;
       const code = this.module.compiled + `\n//# sourceURL=${sourceUrl}`;
-      const customGlobals = this.module.bundler.preset?.getCustomGlobals(this.module);
+      const customGlobals = this.module.bundler.preset?.getCustomGlobals?.(this);
 
       this.status = EvaluationStatus.Started;
       logger.debug(`%cEvaluation.getExports() :: evaluating '${this.module.id}'`, 'color: green');
