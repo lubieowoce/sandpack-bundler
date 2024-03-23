@@ -105,6 +105,12 @@
   },
   "alias": {
     "node:url": "./src/utils/node-url.js",
-    "node:path": "path-browserify"
+    "node:path": "path-browserify",
+    "@babel/core": "./src/bundler/transforms/babel/babel-packages/core.ts",
+    "@babel/generator": "./src/bundler/transforms/babel/babel-packages/generator.ts",
+    "@babel/parser": "./src/bundler/transforms/babel/babel-packages/parser.ts",
+    "@babel/traverse": "./src/bundler/transforms/babel/babel-packages/traverse.ts",
+    "@babel/template": "./src/bundler/transforms/babel/babel-packages/template.ts",
+    "@babel/types": "./src/bundler/transforms/babel/babel-packages/types.js"
   }
 }

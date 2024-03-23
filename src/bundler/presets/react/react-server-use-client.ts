@@ -2,7 +2,7 @@ import type { NodePath, PluginObj, Visitor } from '@babel/core';
 import type { BabelAPI } from '@babel/helper-plugin-utils';
 import type * as t from '@babel/types';
 
-import template from './babel-packages/template';
+import template from '../../transforms/babel/babel-packages/template';
 import { getModuleIdUrl } from './utils';
 
 type ReferenceInfo = { localName?: string; exportedName: string };

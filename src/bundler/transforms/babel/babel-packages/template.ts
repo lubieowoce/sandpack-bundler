@@ -1,3 +1,4 @@
+// simulate '@babel/template' using what's in '@babel/standalone'
 import { template as _template } from './_standalone';
 
 const template = _template.default;

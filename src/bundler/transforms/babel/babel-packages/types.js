@@ -1,4 +1,5 @@
 // @ts-check
+// simulate '@babel/types' using what's in '@babel/standalone'
 const { types } = require('./_standalone');
 
 // there's too many exports there to list them out as an ES Module,

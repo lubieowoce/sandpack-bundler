@@ -1,11 +1,10 @@
 import type { NodePath, PluginObj, Visitor } from '@babel/core';
 import type { BabelAPI } from '@babel/helper-plugin-utils';
-import type * as t from '@babel/types';
 // TODO(actions): something weird going on with the "exports" here...
 import { createPlugin as createBasePlugin } from '@owoce/babel-rsc/dist/plugin-use-server.js';
 
-import template from './babel-packages/template';
-import traverse from './babel-packages/traverse';
+import template from '../../transforms/babel/babel-packages/template';
+import traverse from '../../transforms/babel/babel-packages/traverse';
 import { getModuleIdUrl } from './utils';
 
 export type PluginOptions = {

@@ -1,5 +1,7 @@
 import * as _standalone from '@babel/standalone';
 
+// the type definitions don't include these:
+// https://babel.dev/docs/babel-standalone#internal-packages
 type RealBabelStandalone = typeof _standalone & {
   packages: {
     generator: typeof import('@babel/generator');
